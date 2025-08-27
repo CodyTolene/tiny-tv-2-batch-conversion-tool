@@ -1,97 +1,214 @@
-import sys
 import queue
-from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
-from tkinter.scrolledtext import ScrolledText
 
 from lib.convert_tab import ConvertTab
 from lib.combine_tab import CombineTab
 
-APP_TITLE = "TinyTV 2 Batch Conversion Tool"
-VERSION = "1.0.0"
+import sys
+from pathlib import Path
 
-def find_ffmpeg():
-    base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)).resolve()
-    local = base / "ffmpeg.exe"
-    return str(local) if local.exists() else "ffmpeg"
+def get_ffmpeg_path():
+    if getattr(sys, 'frozen', False):
+        # Running from compiled exe
+        base = Path(sys._MEIPASS)
+    else:
+        # Running from source
+        base = Path(__file__).resolve().parent
+    return str(base / "bin" / "ffmpeg.exe")
 
-FFMPEG = find_ffmpeg()
+def get_ffprobe_path():
+    if getattr(sys, 'frozen', False):
+        base = Path(sys._MEIPASS)
+    else:
+        base = Path(__file__).resolve().parent
+    return str(base / "bin" / "ffprobe.exe")
+
+FFMPEG_CMD = get_ffmpeg_path()
+FFPROBE_CMD = get_ffprobe_path()
 
 class TinyTVApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title(APP_TITLE)
-        self.geometry("1000x660")
+        self.title("TinyTV 2 Batch Conversion Tool")
+        self.geometry("980x640")
 
-        self.log_q = queue.Queue()
+        self.log_q: queue.Queue[str] = queue.Queue()
 
-        # Tabs
+        self._build_layout()
+        self._wire_tabs()
+        self._wire_bottom_bar()
+        self._start_log_pump()
+
+    def _build_layout(self):
+        self.columnconfigure(0, weight=1)
+        self.rowconfigure(0, weight=1)
+        self.rowconfigure(1, weight=0)
+
         self.nb = ttk.Notebook(self)
-        self.nb.pack(fill="both", expand=True)
+        self.nb.grid(row=0, column=0, sticky="nsew")
 
-        # Convert tab
-        convert_frame = ttk.Frame(self.nb)
-        self.nb.add(convert_frame, text="Convert")
+        self.bottom_bar = ttk.Frame(self)
+        self.bottom_bar.grid(row=1, column=0, sticky="we", padx=10, pady=8)
+        self.bottom_bar.columnconfigure(0, weight=1)
 
-        # Combine tab
-        combine_frame = ttk.Frame(self.nb)
-        self.nb.add(combine_frame, text="Combine")
+        self.progress = ttk.Progressbar(self.bottom_bar, mode="determinate")
+        self.progress.grid(row=0, column=0, sticky="we", padx=(0, 8))
 
-        # Log
-        self.log = ScrolledText(self, height=10, state="disabled")
-        self.log.pack(fill="both", expand=False, padx=10, pady=(0, 8))
+        btn_wrap = ttk.Frame(self.bottom_bar)
+        btn_wrap.grid(row=0, column=1, sticky="e")
 
-        # Progress bar and Convert button
-        self.cv_progress = ttk.Progressbar(self, orient="horizontal", mode="determinate")
-        self.cv_progress.pack(fill="x", padx=10, pady=(0, 8))
+        self.clear_log_btn = ttk.Button(btn_wrap, text="Clear log", command=self._clear_log)
+        self.clear_log_btn.pack(side="left", padx=(0, 8))
 
-        bottom_bar = ttk.Frame(self)
-        bottom_bar.pack(fill="x", padx=10, pady=(0, 10))
-        self.convert_btn = ttk.Button(bottom_bar, text="Convert")  # command is bound by ConvertTab
-        self.convert_btn.pack(side="right")
+        self.convert_btn = ttk.Button(btn_wrap, text="Convert")
+        self.convert_btn.pack(side="left")
 
-        # Mount tabs
+        self.combine_btn = ttk.Button(btn_wrap, text="Combine")
+        self.combine_btn.pack(side="left")
+        self.combine_btn.pack_forget()
+
+        self.log_text = tk.Text(self, height=8, wrap="word", state="disabled")
+        self.log_text.grid(row=2, column=0, sticky="nsew", padx=10, pady=(0, 2))
+        self.rowconfigure(2, weight=0)
+
+        # Hyperlinks
+        link_frame = ttk.Frame(self)
+        link_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
+        link_frame.columnconfigure(0, weight=1)
+        link_frame.columnconfigure(1, weight=1)
+        link_frame.columnconfigure(2, weight=1)
+
+        # Author link
+        author_frame = ttk.Frame(link_frame)
+        author_frame.grid(row=0, column=0, sticky="w")
+        tk.Label(author_frame, text="Author: ").pack(side="left")
+        self.link1 = tk.Label(author_frame, text="Cody Tolene", fg="blue", cursor="hand2")
+        self.link1.pack(side="left")
+        self.link1.bind("<Button-1>", lambda e: self._open_link("https://github.com/CodyTolene"))
+
+        # Tiny Circuits link
+        tinytv_frame = ttk.Frame(link_frame)
+        tinytv_frame.grid(row=0, column=1)
+        tk.Label(tinytv_frame, text="Purchase TinyTV 2: ").pack(side="left")
+        self.link2 = tk.Label(tinytv_frame, text="Tiny Circuits", fg="blue", cursor="hand2")
+        self.link2.pack(side="left")
+        self.link2.bind("<Button-1>", lambda e: self._open_link("https://www.tinycircuits.com/"))
+
+        # Donation link
+        donate_frame = ttk.Frame(link_frame)
+        donate_frame.grid(row=0, column=2, sticky="e")
+        tk.Label(donate_frame, text="Any ", padx=0, pady=0, borderwidth=0).pack(side="left")
+        self.link3 = tk.Label(donate_frame, text="donation", fg="blue", cursor="hand2", padx=0, pady=0, borderwidth=0)
+        self.link3.pack(side="left")
+        self.link3.bind("<Button-1>", lambda e: self._open_link("https://github.com/sponsors/CodyTolene"))
+        tk.Label(donate_frame, text=" appreciated!", padx=0, pady=0, borderwidth=0).pack(side="left")
+
+
+    def _wire_tabs(self):
         self.convert_tab = ConvertTab(
-            convert_frame,
+            self.nb,
             log_q=self.log_q,
-            progress=self.cv_progress,
+            progress=self.progress,
             convert_btn=self.convert_btn,
-            ffmpeg_cmd=FFMPEG,
+            ffmpeg_cmd=FFMPEG_CMD,
         )
-        self.convert_tab.pack(fill="both", expand=True)
+        self.nb.add(self.convert_tab, text="Convert")
 
         self.combine_tab = CombineTab(
-            combine_frame,
+            self.nb,
             log_q=self.log_q,
-            ffmpeg_cmd=FFMPEG,
+            ffmpeg_cmd=FFMPEG_CMD,
         )
-        self.combine_tab.pack(fill="both", expand=True)
+        self.nb.add(self.combine_tab, text="Combine")
 
-        # Reset progress bar after completion on any interaction
-        self.bind_all("<Button>", self.convert_tab.on_interaction, add="+")
-        self.bind_all("<Key>", self.convert_tab.on_interaction, add="+")
-        self.nb.bind("<<NotebookTabChanged>>", self.convert_tab.on_interaction, add="+")
+        self.nb.bind("<<NotebookTabChanged>>", self._on_tab_changed, add="+")
 
-        # Drain log every oncce in a while
-        self.after(100, self.drain_log)
-    
-    def write_log(self, text: str):
-        self.log.configure(state="normal")
-        self.log.insert(tk.END, text.rstrip() + "\n")
-        self.log.see(tk.END)
-        self.log.configure(state="disabled")
+    def _wire_bottom_bar(self):
+        self.convert_btn.config(command=self._convert_wrapper_start)
+        self.combine_btn.config(command=self.combine_tab.start_combine)
+        try:
+            self.convert_tab.attach_clear_log_button(
+                self.clear_log_btn,
+                is_empty_fn=lambda: self._log_is_empty(),
+                clear_fn=self._clear_log,
+            )
+        except Exception:
+            pass
 
-    def drain_log(self):
-        while True:
-            try:
+    def _on_tab_changed(self, _=None):
+        idx = self.nb.index(self.nb.select())
+        if idx == 0:  # Convert
+            self.combine_btn.pack_forget()
+            self.convert_btn.pack(side="left")
+        else:         # Combine
+            self.convert_btn.pack_forget()
+            self.combine_btn.pack(side="left")
+
+    def _convert_wrapper_start(self):
+        # Disable Combine tab while converting
+        try:
+            self.nb.tab(1, state="disabled")
+        except Exception:
+            pass
+
+        try:
+            self.convert_tab.start_convert_all()
+        finally:
+            self.after(200, self._poll_convert_running)
+
+    def _poll_convert_running(self):
+        running = False
+        try:
+            running = bool(self.convert_tab.is_running)
+        except Exception:
+            pass
+
+        if running:
+            self.after(250, self._poll_convert_running)
+            return
+
+        try:
+            self.nb.tab(1, state="normal")
+        except Exception:
+            pass
+
+    def _start_log_pump(self):
+        self.after(75, self._drain_log)
+
+    def _drain_log(self):
+        pushed_any = False
+        try:
+            while True:
                 line = self.log_q.get_nowait()
-            except queue.Empty:
-                break
-            self.write_log(line)
-        self.after(100, self.drain_log)
+                self._append_log(line + "\n")
+                pushed_any = True
+        except queue.Empty:
+            pass
+
+        if pushed_any:
+            self.log_text.see("end")
+
+        self.after(100, self._drain_log)
+
+    def _append_log(self, text: str):
+        self.log_text.configure(state="normal")
+        self.log_text.insert("end", text)
+        self.log_text.configure(state="disabled")
+
+    def _clear_log(self):
+        self.log_text.configure(state="normal")
+        self.log_text.delete("1.0", "end")
+        self.log_text.configure(state="disabled")
+
+    def _log_is_empty(self) -> bool:
+        content = self.log_text.get("1.0", "end-1c")
+        return len(content.strip()) == 0
+
+    def _open_link(self, url: str):
+        import webbrowser
+        webbrowser.open_new(url)
 
 
 if __name__ == "__main__":
-    app = TinyTVApp()
-    app.mainloop()
+    TinyTVApp().mainloop()

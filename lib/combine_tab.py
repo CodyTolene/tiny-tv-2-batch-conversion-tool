@@ -1,48 +1,80 @@
 import threading
 import subprocess
 from pathlib import Path
+import tempfile
 import tkinter as tk
 from tkinter import ttk, filedialog
 
-# Allowed video types
-VIDEO_EXTS = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".wmv", ".m4v", ".mpg", ".mpeg", ".flv")
-VIDEO_PATTERNS = ";".join(f"*{ext}" for ext in VIDEO_EXTS) # Windows uses ';' between patterns
-VIDEO_FILETYPES = [("Video files", VIDEO_PATTERNS)]
+# AVI files only
+VIDEO_EXTENSIONS = (".avi",)
+VIDEO_PATTERNS = ";".join(f"*{ext}" for ext in VIDEO_EXTENSIONS)
+VIDEO_FILETYPES = [("AVI files", VIDEO_PATTERNS)]
+
+FAT32_MAX_FILE_BYTES = (4 * 1024 * 1024 * 1024) - 1  # 4GB - 1 byte
+
+# When there are many files, use concat demuxer to avoid Windows command-length limits
+CONCAT_LIST_THRESHOLD = 50
 
 def is_video(p: Path) -> bool:
-    return p.suffix.lower() in set(VIDEO_EXTS)
+    return p.suffix.lower() in set(VIDEO_EXTENSIONS)
 
-
-def pad2(s: str) -> str | None:
+def pad2(text: str) -> str | None:
     try:
-        return f"{int(s):02d}"
+        return f"{int(text):02d}"
     except Exception:
         return None
 
+def fmt_bytes(n: int) -> str:
+    try:
+        if n < 1024:
+            return f"{n} B"
+        kb = n / 1024
+        if kb < 1024:
+            return f"{kb:.2f} KB"
+        mb = kb / 1024
+        if mb < 1024:
+            return f"{mb:.2f} MB"
+        gb = mb / 1024
+        return f"{gb:.2f} GB"
+    except Exception:
+        return "N/A"
 
 class CombineTab(ttk.Frame):
-    """UI + behavior for the 'Combine' tab."""
     def __init__(self, parent, *, log_q, ffmpeg_cmd: str):
         super().__init__(parent)
         self.log_q = log_q
         self.ffmpeg = ffmpeg_cmd
 
-        # State
         self.files: list[Path] = []
+        self._last_dir = str(Path.home())
+        self._combine_btn: ttk.Button | None = None
+        self._estimate_over_limit = False
 
-        # UI
-        self.build_ui()
-        self.update_buttons()
+        self._build_ui()
+        self._update_buttons()
+        self._update_estimate()
 
-    def build_ui(self):
-        # Listbox (files)
-        self.listbox = tk.Listbox(self, selectmode=tk.EXTENDED, height=14)
-        self.listbox.grid(row=0, column=0, rowspan=6, sticky="nsew", padx=(10, 0), pady=10)
-        self.listbox.bind("<<ListboxSelect>>", lambda e: self.update_buttons())
+    def attach_combine_button(self, btn: ttk.Button):
+        self._combine_btn = btn
+        self._update_estimate()  # Sync
 
-        # Buttons
+    def _build_ui(self):
+        list_wrap = ttk.Frame(self)
+        list_wrap.grid(row=0, column=0, columnspan=2, rowspan=6, sticky="nsew", padx=(10, 0), pady=10)
+        list_wrap.grid_columnconfigure(0, weight=1)
+        list_wrap.grid_rowconfigure(0, weight=1)
+
+        # Keep selection
+        self.listbox = tk.Listbox(list_wrap, selectmode=tk.EXTENDED, height=16, exportselection=False)
+        self.listbox.grid(row=0, column=0, sticky="nsew")
+        self.listbox.bind("<<ListboxSelect>>", lambda _e=None: self._update_buttons())
+
+        vscroll = ttk.Scrollbar(list_wrap, orient="vertical", command=self.listbox.yview)
+        vscroll.grid(row=0, column=1, sticky="ns")
+        self.listbox.config(yscrollcommand=vscroll.set)
+
         btn_col = ttk.Frame(self)
-        btn_col.grid(row=0, column=1, sticky="ns", padx=10, pady=10)
+        btn_col.grid(row=0, column=2, rowspan=6, sticky="ne", padx=10, pady=10)
 
         self.btn_add = ttk.Button(btn_col, text="Add files", command=self.add_files)
         self.btn_add.pack(pady=(0, 10), fill="x")
@@ -59,56 +91,130 @@ class CombineTab(ttk.Frame):
         self.btn_clear = ttk.Button(btn_col, text="Clear", width=12, command=self.clear_list)
         self.btn_clear.pack(pady=2, fill="x")
 
-        # Output
         self.out_var = tk.StringVar()
         out_row = ttk.Frame(self)
-        out_row.grid(row=6, column=0, columnspan=2, sticky="we", padx=10, pady=(0, 10))
+        out_row.grid(row=6, column=0, columnspan=3, sticky="we", padx=10, pady=(0, 10))
         ttk.Button(out_row, text="Output folder", command=self.pick_folder).pack(side="left")
-        ttk.Entry(out_row, textvariable=self.out_var, width=70).pack(side="left", padx=(8, 0), fill="x", expand=True)
+        ttk.Entry(out_row, textvariable=self.out_var).pack(side="left", padx=(8, 0), fill="x", expand=True)
 
-        # Channel (optional)
-        ttk.Label(self, text="Channel").grid(row=7, column=0, sticky="w", padx=10)
+        # Options row
+        options_row = ttk.Frame(self)
+        options_row.grid(row=7, column=0, columnspan=3, sticky="we", padx=10, pady=(0, 4))
+        for c in range(3):
+            options_row.grid_columnconfigure(c, weight=1)
+
+        chan_group = ttk.Frame(options_row)
+        chan_group.grid(row=0, column=0, sticky="w")
+        ttk.Label(chan_group, text="Channel prefix (optional)").pack(side="left")
         self.chan_var = tk.StringVar()
-        ttk.Entry(self, textvariable=self.chan_var, width=8).grid(row=7, column=0, sticky="w", padx=(70, 0))
+        self.chan_entry = tk.Entry(chan_group, textvariable=self.chan_var, width=8)
+        self.chan_entry.pack(side="left", padx=(8, 0))
+        self._attach_placeholder(self.chan_entry, "e.g. 01")
 
-        # Output name and start button
-        ttk.Label(self, text="Output name").grid(row=8, column=0, sticky="w", padx=10)
+        name_group = ttk.Frame(options_row)
+        name_group.grid(row=0, column=1, sticky="we")
+        name_group.grid_columnconfigure(0, weight=0)
+        name_group.grid_columnconfigure(1, weight=1)
+        ttk.Label(name_group, text="Output name").grid(row=0, column=0, sticky="e", padx=(0, 8))
         self.name_var = tk.StringVar(value="combined_episodes.avi")
-        ttk.Entry(self, textvariable=self.name_var, width=40).grid(row=8, column=0, sticky="w", padx=(100, 0))
-        ttk.Button(self, text="Start Combine", command=self.start_combine).grid(row=8, column=0, sticky="e", padx=(0, 10))
+        self.name_entry = ttk.Entry(name_group, textvariable=self.name_var, width=32)
+        self.name_entry.grid(row=0, column=1, sticky="w")
 
-        # Grid
-        for i in range(2):
-            self.grid_columnconfigure(i, weight=1)
+        size_group = ttk.Frame(options_row)
+        size_group.grid(row=0, column=2, sticky="e")
+        self.size_label = ttk.Label(size_group, text="Estimated size: 0 B", foreground="black")
+        self.size_label.pack(side="right")
+
+        self.grid_columnconfigure(0, weight=3)
+        self.grid_columnconfigure(1, weight=0)
+        self.grid_columnconfigure(2, weight=0)
+        for r in range(8):
+            self.grid_rowconfigure(r, weight=0)
         self.grid_rowconfigure(5, weight=1)
 
-    def write_log(self, text: str):
-        self.log_q.put(text)
+    def _attach_placeholder(self, entry: tk.Entry, placeholder: str):
+        entry._placeholder = placeholder
+        entry._default_fg = entry.cget("foreground")
 
-    def update_buttons(self):
-        n = len(self.files)
-        sel = list(self.listbox.curselection())
+        def show():
+            if not entry.get():
+                entry.insert(0, placeholder)
+                entry.config(foreground="gray")
 
-        up_down_state = ("normal" if (n > 1 and sel) else "disabled")
-        self.btn_up.config(state=up_down_state)
-        self.btn_down.config(state=up_down_state)
+        def clear(_=None):
+            if entry.get() == placeholder and entry.cget("foreground") == "gray":
+                entry.delete(0, tk.END)
+                entry.config(foreground=entry._default_fg)
 
-        self.btn_remove.config(state=("normal" if sel else "disabled"))
-        self.btn_clear.config(state=("normal" if n >= 1 else "disabled"))
+        def restore(_=None):
+            if not entry.get():
+                show()
+
+        show()
+        entry.bind("<FocusIn>", clear)
+        entry.bind("<FocusOut>", restore)
 
     def refresh_list(self):
         self.listbox.delete(0, tk.END)
         for p in self.files:
             self.listbox.insert(tk.END, p.name)
-        self.update_buttons()
+        self._update_buttons()
+        self._update_estimate()
+
+    def _update_buttons(self):
+        sel = bool(self.listbox.curselection())
+        many = len(self.files) > 1 and sel
+        self.btn_up.config(state=("normal" if many else "disabled"))
+        self.btn_down.config(state=("normal" if many else "disabled"))
+        self.btn_remove.config(state=("normal" if sel else "disabled"))
+        self.btn_clear.config(state=("normal" if self.files else "disabled"))
+
+    def _update_estimate(self):
+        # File size estimate
+        total = 0
+        for p in self.files:
+            try:
+                total += p.stat().st_size
+            except Exception:
+                pass
+
+        txt = f"Estimated size: {fmt_bytes(total)}"
+        over = total > FAT32_MAX_FILE_BYTES
+
+        # Update label color, red if over limit
+        try:
+            self.size_label.config(text=txt, foreground=("red" if over else "black"))
+        except Exception:
+            pass
+
+        # Enable/disable combine button
+        if self._combine_btn is not None:
+            try:
+                self._combine_btn.config(state=("disabled" if over or not self.files else "normal"))
+            except Exception:
+                pass
+
+        self._estimate_over_limit = over
 
     def add_files(self):
-        paths = filedialog.askopenfilenames(title="Select videos", filetypes=VIDEO_FILETYPES)
+        paths = filedialog.askopenfilenames(
+            parent=self.winfo_toplevel(),
+            title="Select AVI videos",
+            filetypes=VIDEO_FILETYPES,
+            initialdir=self._last_dir,
+        )
         if not paths:
             return
-        picks = [Path(p) for p in paths if is_video(Path(p))]
-        self.files.extend(picks)
-        self.refresh_list()
+        picks = []
+        for raw in paths:
+            p = Path(raw)
+            if not is_video(p):
+                continue
+            picks.append(p)
+        if picks:
+            self._last_dir = str(Path(picks[0]).parent)
+            self.files.extend(picks)
+            self.refresh_list()
 
     def remove_selected(self):
         sel = list(self.listbox.curselection())
@@ -127,40 +233,95 @@ class CombineTab(ttk.Frame):
         sel = list(self.listbox.curselection())
         if not sel:
             return
-        if delta < 0:
-            for i in sel:
-                j = i + delta
-                if j >= 0:
-                    self.files[i], self.files[j] = self.files[j], self.files[i]
-        else:
-            for i in reversed(sel):
-                j = i + delta
-                if j < len(self.files):
-                    self.files[i], self.files[j] = self.files[j], self.files[i]
+
+        # Reorder based on move direction
+        iterate = sel if delta < 0 else list(reversed(sel))
+        for i in iterate:
+            j = i + delta
+            if 0 <= j < len(self.files):
+                self.files[i], self.files[j] = self.files[j], self.files[i]
+
+        new_indices = [min(max(0, i + delta), len(self.files) - 1) for i in sel]
+
+        # Refresh and reselect
         self.refresh_list()
-        # Reselect moved
-        for i in [min(max(0, i + delta), len(self.files) - 1) for i in sel]:
-            self.listbox.selection_set(i)
+        self.listbox.selection_clear(0, tk.END)
+        for idx in new_indices:
+            self.listbox.selection_set(idx)
+        if new_indices:
+            self.listbox.activate(new_indices[0])
+            self.listbox.see(new_indices[0])
+        self.listbox.focus_set()
+        self._update_buttons()
+        self._update_estimate()
 
     def pick_folder(self):
-        folder = filedialog.askdirectory(title="Choose output folder")
+        folder = filedialog.askdirectory(parent=self.winfo_toplevel(), title="Choose output folder", initialdir=self._last_dir)
         if folder:
             self.out_var.set(folder)
+            self._last_dir = folder
+
+    def write_log(self, text: str):
+        try:
+            self.log_q.put(text)
+        except Exception:
+            pass
 
     def spawn_ffmpeg(self, args: list[str]) -> int:
         try:
             proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, universal_newlines=True)
             for line in proc.stderr:
-                self.log_q.put(line.strip())
+                self.write_log(line.strip())
             return proc.wait()
         except Exception as e:
             self.write_log(f"[ERROR] {e}")
             return 1
 
+    def _run_concat_demuxer_reencode(self, files: list[Path], out_path: Path) -> int:
+        """
+        Use the concat demuxer with re-encode + stable timing filters.
+        This avoids the Windows command-length limit and prevents per-file
+        timestamp drift from accumulating.
+        """
+        fd, list_path = tempfile.mkstemp(prefix="tinytv_concat_", suffix=".txt")
+        try:
+            path = Path(list_path)
+            with open(path, "w", encoding="utf-8") as f:
+                for p in files:
+                    f.write(f"file '{p.as_posix()}'\n")
+
+            self.write_log(f"[*] Using concat list ({len(files)} files) with re-encode for sync")
+            cmd = [
+                self.ffmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y",
+                "-f", "concat", "-safe", "0", "-i", str(path),
+                "-fflags", "+genpts",
+                # Video timing + format
+                "-vf", "fps=12,format=yuvj420p,setsar=1",
+                "-r", "12",
+                "-c:v", "mjpeg", "-q:v", "16",
+                # Audio timing + format
+                "-af", "aresample=async=1:min_hard_comp=0.100:first_pts=0,"
+                       "aformat=sample_fmts=u8:channel_layouts=mono,"
+                       "asetpts=PTS",
+                "-c:a", "pcm_u8", "-ar", "8000", "-ac", "1",
+                str(out_path),
+            ]
+            return self.spawn_ffmpeg(cmd)
+        finally:
+            try:
+                Path(list_path).unlink(missing_ok=True)
+            except Exception:
+                pass
+
     def start_combine(self):
         files = list(self.files)
         if not files:
-            self.write_log("[ERROR] Add some videos first.")
+            self.write_log("[ERROR] Add some .avi videos first.")
+            return
+
+        # Block if over FAT32 limit
+        if self._estimate_over_limit:
+            self.write_log("[ERROR] Estimated output exceeds FAT32 single-file limit (~4GB). Remove files or split the batch.")
             return
 
         out_dir = self.out_var.get().strip() or str(Path.cwd())
@@ -179,27 +340,79 @@ class CombineTab(ttk.Frame):
         out_path = Path(out_dir) / f"{chan_prefix}{out_name}"
 
         def worker():
-            lst = out_path.with_suffix(".txt")
-            with open(lst, "w", encoding="utf-8") as f:
-                for p in files:
-                    f.write(f"file '{Path(p).as_posix()}'\n")
-
-            self.write_log(f"[*] Joining {len(files)} files -> {out_path.name}")
-            cmd = [
-                self.ffmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y",
-                "-f", "concat", "-safe", "0", "-i", str(lst),
-                "-c", "copy", str(out_path)
-            ]
-            code = self.spawn_ffmpeg(cmd)
-
             try:
-                lst.unlink(missing_ok=True)
-            except Exception:
-                pass
+                if len(files) == 1:
+                    src = files[0]
+                    self.write_log(f"[*] Transcoding single file -> {out_path.name}")
+                    cmd = [
+                        self.ffmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y",
+                        "-i", str(src),
+                        "-vf", "fps=12,format=yuvj420p,setsar=1,setpts=N/12/TB",
+                        "-r", "12",
+                        "-c:v", "mjpeg", "-q:v", "16",
+                        "-c:a", "pcm_u8", "-ar", "8000", "-ac", "1",
+                        "-af", "aresample=async=1:min_hard_comp=0.100:first_pts=0,"
+                              "aformat=sample_fmts=u8:channel_layouts=mono,"
+                              "asetpts=N/SR/TB",
+                        str(out_path),
+                    ]
+                    code = self.spawn_ffmpeg(cmd)
+                    if code == 0:
+                        self.write_log("[OK] Combine complete.")
+                    else:
+                        self.write_log("[ERROR] Combine failed.")
+                    return
 
-            if code == 0:
-                self.write_log("[OK] Combine complete.")
-            else:
-                self.write_log("[ERROR] Combine failed.")
+                # If many files, use concat demuxer with re-encode for sync + short command line
+                if len(files) >= CONCAT_LIST_THRESHOLD:
+                    self.write_log(f"[*] Joining {len(files)} AVI files with concat demuxer (re-encode) -> {out_path.name}")
+                    code = self._run_concat_demuxer_reencode(files, out_path)
+                    if code == 0:
+                        self.write_log("[OK] Combine complete.")
+                    else:
+                        self.write_log("[ERROR] Combine failed.")
+                    return
+
+                # Otherwise, keep normalized per-input filter graph then concat (re-encode)
+                inputs: list[str] = []
+                for p in files:
+                    inputs.extend(["-i", str(p)])
+
+                parts: list[str] = []
+                interleaved: list[str] = []
+                for idx in range(len(files)):
+                    v_lbl = f"v{idx}"
+                    a_lbl = f"a{idx}"
+                    parts.append(f"[{idx}:v:0]fps=12,format=yuvj420p,setsar=1,setpts=N/12/TB[{v_lbl}]")
+                    parts.append(
+                        f"[{idx}:a:0]aresample=async=1:min_hard_comp=0.100:first_pts=0,"
+                        f"aformat=sample_fmts=u8:channel_layouts=mono,"
+                        f"asetpts=N/SR/TB[{a_lbl}]"
+                    )
+                    interleaved.extend([f"[{v_lbl}]", f"[{a_lbl}]"])
+
+                n = len(files)
+                parts.append("".join(interleaved) + f"concat=n={n}:v=1:a=1[v][a]")
+                filter_complex = ";".join(parts)
+
+                cmd = [
+                    self.ffmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y",
+                    *inputs,
+                    "-filter_complex", filter_complex,
+                    "-map", "[v]", "-map", "[a]",
+                    "-r", "12",
+                    "-c:v", "mjpeg", "-q:v", "16",
+                    "-c:a", "pcm_u8", "-ar", "8000", "-ac", "1",
+                    str(out_path),
+                ]
+
+                self.write_log(f"[*] Joining {len(files)} AVI files -> {out_path.name}")
+                code = self.spawn_ffmpeg(cmd)
+                if code == 0:
+                    self.write_log("[OK] Combine complete.")
+                else:
+                    self.write_log("[ERROR] Combine failed.")
+            except Exception as e:
+                self.write_log(f"[ERROR] {e}")
 
         threading.Thread(target=worker, daemon=True).start()

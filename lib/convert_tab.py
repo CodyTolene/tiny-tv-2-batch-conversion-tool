@@ -8,7 +8,7 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 
 try:
-    from PIL import Image, ImageTk  # type: ignore
+    from PIL import Image, ImageTk
     PIL_AVAILABLE = True
 except Exception:
     PIL_AVAILABLE = False
@@ -22,12 +22,9 @@ AUDIO_CODEC = "pcm_u8"
 AUDIO_RATE = "8000"
 AUDIO_CHANNELS = "1"
 
-# Allowed video types
 VIDEO_EXTENSIONS = (".mp4", ".mov", ".mkv", ".avi", ".webm", ".wmv", ".m4v", ".mpg", ".mpeg", ".flv")
-VIDEO_FILETYPES = [
-    ("Video files", [f"*{ext}" for ext in VIDEO_EXTENSIONS]),
-    ("All files", "*.*"),
-]
+VIDEO_FILETYPES = [("Video files", [f"*{ext}" for ext in VIDEO_EXTENSIONS]), ("All files", "*.*")]
+
 
 def fmt_hms(seconds: float | None) -> str:
     if seconds is None or seconds <= 0:
@@ -37,6 +34,7 @@ def fmt_hms(seconds: float | None) -> str:
     m = (total % 3600) // 60
     s = total % 60
     return f"{h:d}:{m:02d}:{s:02d}" if h > 0 else f"{m:d}:{s:02d}"
+
 
 def is_video(path: Path) -> bool:
     return path.suffix.lower() in set(VIDEO_EXTENSIONS)
@@ -48,7 +46,7 @@ def pad2(text: str) -> str | None:
     except Exception:
         return None
 
-# Core
+
 class PathTools:
     @staticmethod
     def normalize(p: Path) -> str:
@@ -221,7 +219,10 @@ class SizeEstimator:
 
         return int(video_bps * duration) + audio_bytes
 
+
 class ConvertTab(ttk.Frame):
+    on_running_changed = None
+
     def __init__(
         self,
         master,
@@ -240,7 +241,6 @@ class ConvertTab(ttk.Frame):
     ):
         super().__init__(master)
 
-        # Deps / params
         self.log_q = log_q
         self.progress = progress
         self.convert_btn = convert_btn
@@ -251,13 +251,11 @@ class ConvertTab(ttk.Frame):
         self.arate = a_rate
         self.ach = a_ch
 
-        # Services
         self.probe = Probe(ffmpeg_cmd)
         self.ff = FFmpegProcess(ffmpeg_cmd, log_q)
         self.sizer = SizeEstimator(self.ff, fps=self.fps, frame_w=self.frame_w, frame_h=self.frame_h,
                                    a_rate=self.arate, a_ch=self.ach, vcodec=self.vcodec)
 
-        # State
         self.is_running = False
         self.convert_finished_once = False
         self.files: list[Path] = []
@@ -287,7 +285,7 @@ class ConvertTab(ttk.Frame):
         self.size_label = ttk.Label(self.preview_panel, text="Estimated size: N/A")
         self.size_label.pack(side="top", anchor="w")
 
-        # List
+        # File list
         list_wrap = ttk.Frame(self)
         list_wrap.grid(row=0, column=1, columnspan=2, rowspan=6, sticky="nsew", padx=(0, 0), pady=10)
         list_wrap.grid_columnconfigure(0, weight=1)
@@ -328,19 +326,18 @@ class ConvertTab(ttk.Frame):
                                     command=lambda: self.clear_list(self.file_list, self.files))
         self.btn_clear.pack(pady=2, fill="x")
 
-        # Output
+        # Output folder row
         self.output_dir_var = tk.StringVar()
         self.output_dir_var.trace_add("write", lambda *_: self.update_controls())
 
         out_row = ttk.Frame(self)
         out_row.grid(row=6, column=0, columnspan=4, sticky="we", padx=10, pady=(0, 10))
-
         ttk.Button(out_row, text="Output folder",
                    command=lambda: self.pick_folder(self.output_dir_var)).pack(side="left")
         self.output_entry = ttk.Entry(out_row, textvariable=self.output_dir_var)
         self.output_entry.pack(side="left", padx=(8, 0), fill="x", expand=True)
 
-        # Options
+        # Options row
         options_row = ttk.Frame(self)
         options_row.grid(row=7, column=0, columnspan=4, sticky="we", padx=10, pady=(0, 4))
         for col in range(3):
@@ -374,6 +371,7 @@ class ConvertTab(ttk.Frame):
         ttk.Checkbutton(norm_group, text="Normalize / Boost audio",
                         variable=self.normalize_audio_var).pack(side="right")
 
+        # Quality row
         q_row = ttk.Frame(self)
         q_row.grid(row=8, column=0, columnspan=4, sticky="we", padx=10, pady=(0, 8))
         ttk.Label(q_row, text="Quality:").pack(side="left", padx=(0, 8))
@@ -387,6 +385,7 @@ class ConvertTab(ttk.Frame):
         self.quality_scale.pack(side="left", padx=8, fill="x", expand=True)
         ttk.Label(q_row, text="Larger file / higher quality").pack(side="left")
 
+        # Layout stretch
         self.grid_columnconfigure(0, weight=0)
         self.grid_columnconfigure(1, weight=3)
         self.grid_columnconfigure(2, weight=2)
@@ -395,22 +394,12 @@ class ConvertTab(ttk.Frame):
             self.grid_rowconfigure(r, weight=0)
         self.grid_rowconfigure(5, weight=1)
 
+        # Convert button
         self.convert_btn.config(text="Convert", command=self.start_convert_all)
 
         self.update_controls()
         self._clear_preview()
         self.after(0, self._set_initial_minsize)
-
-    def attach_clear_log_button(self, clear_btn: ttk.Button, is_empty_fn, clear_fn):
-        def tick():
-            try:
-                empty = bool(is_empty_fn())
-            except Exception:
-                empty = True
-            clear_btn.config(state=("disabled" if empty or self.is_running else "normal"))
-            self.after(250, tick)
-        clear_btn.config(text="Clear log", command=lambda: clear_fn())
-        tick()
 
     def _set_initial_minsize(self):
         try:
@@ -452,7 +441,6 @@ class ConvertTab(ttk.Frame):
             return ""
         return val
 
-    # Filters
     def _vf(self) -> str:
         w, h = self.frame_w, self.frame_h
         mode = self.scale_mode.get()
@@ -679,8 +667,10 @@ class ConvertTab(ttk.Frame):
         self.log_q.put(f"[preview vf]  {vf}")
 
         q_now = int(self.quality_var.get())
-        self.sizer.ensure_anchors(src, vf, on_ready=lambda: self.after(0, self._update_estimate_only))
+
+        self.sizer.ensure_anchors(src, vf, on_ready=self._update_estimate_only)
         thumb = self.ff.thumbnail(src, vf, q_now, jpeg_preferred=PIL_AVAILABLE)
+
         est_bytes = self.sizer.estimate_bytes(duration, q_now, vf=vf, src=src)
 
         if self._preview_target != src:
@@ -689,7 +679,6 @@ class ConvertTab(ttk.Frame):
         def apply():
             if self._preview_target != src:
                 return
-
             self.length_label.config(text=f"Length: {fmt_hms(duration)}")
             if est_bytes is not None:
                 mb = est_bytes / (1024 * 1024)
@@ -718,35 +707,22 @@ class ConvertTab(ttk.Frame):
         if not sel:
             self.size_label.config(text="Estimated size: N/A")
             return
-
         idx = sel[0]
         if not (0 <= idx < len(self.files)):
             self.size_label.config(text="Estimated size: N/A")
             return
-
         src = self.files[idx]
         duration = self._duration_cache.get(src)
         if duration is None:
             duration = self.probe.duration(src)
             if duration is not None:
                 self._duration_cache[src] = duration
-
         est_bytes = self.sizer.estimate_bytes(duration, int(self.quality_var.get()), vf=self._vf(), src=src)
         if est_bytes is None:
             self.size_label.config(text="Estimated size: N/A")
         else:
             mb = est_bytes / (1024 * 1024)
             self.size_label.config(text=f"Estimated size: {mb:.2f} MB")
-
-    def start_convert_selected(self):
-        if self.is_running:
-            return
-        sel = list(self.file_list.curselection())
-        if not sel:
-            self.log_q.put("[ERROR] Select a file to convert.")
-            return
-        files = [self.files[i] for i in sel if 0 <= i < len(self.files)]
-        self._convert_files(files)
 
     def start_convert_all(self):
         if self.is_running:
@@ -761,14 +737,12 @@ class ConvertTab(ttk.Frame):
             return
 
         chan_raw = self._read_entry(self.channel_entry)
-        channel = pad2(chan_raw) if chan_raw else None
-        if chan_raw and not channel:
-            self.log_q.put("[ERROR] Channel must be a number (e.g. 01) or left blank.")
-            return
-
-        if len(files) < 1:
-            self.log_q.put("[ERROR] Add at least one video.")
-            return
+        chan = None
+        if chan_raw:
+            chan = pad2(chan_raw)
+            if not chan:
+                self.log_q.put("[ERROR] Channel must be a number (e.g. 01) or left blank.")
+                return
 
         out_dir = self.output_dir_var.get().strip()
         if not out_dir:
@@ -777,6 +751,9 @@ class ConvertTab(ttk.Frame):
         Path(out_dir).mkdir(parents=True, exist_ok=True)
 
         self.is_running = True
+        if callable(self.on_running_changed):
+            self.on_running_changed(True)
+
         self.convert_finished_once = False
         self.update_controls()
         self.progress["mode"] = "determinate"
@@ -790,11 +767,10 @@ class ConvertTab(ttk.Frame):
         def worker():
             ok = True
             for idx, src in enumerate(files, start=1):
-                prefix = f"{channel}_" if channel else ""
-                dst = Path(out_dir) / f"{prefix}{src.stem}.avi"
-
+                base = src.stem
+                prefix = f"{chan}_" if chan else ""
+                dst = Path(out_dir) / f"{prefix}{base}.avi"
                 self.log_q.put(f"[*] Converting {src.name} -> {dst.name}")
-
                 cmd = [
                     self.ff.ffmpeg, "-hide_banner", "-loglevel", "error", "-stats",
                     "-y", "-i", str(src),
@@ -802,16 +778,13 @@ class ConvertTab(ttk.Frame):
                     "-r", str(self.fps),
                     "-pix_fmt", "yuvj420p",
                     "-c:v", self.vcodec, "-q:v", str(q_val),
-                    "-c:a", self.acodec, "-ar", self.arate, "-ac", self.ach,
+                    "-c:a", AUDIO_CODEC, "-ar", AUDIO_RATE, "-ac", AUDIO_CHANNELS,
                     *af,
                     str(dst)
                 ]
-
                 code = self.ff.run(cmd)
-
                 self.progress["value"] = idx
                 self.progress.update_idletasks()
-
                 if code != 0:
                     self.log_q.put(f"[ERROR] Conversion failed: {src}")
                     ok = False
@@ -819,8 +792,9 @@ class ConvertTab(ttk.Frame):
 
             if ok:
                 self.log_q.put("[OK] Convert complete.")
-
             self.is_running = False
+            if callable(self.on_running_changed):
+                self.on_running_changed(False)
             self.convert_finished_once = True
             self.update_controls()
 
