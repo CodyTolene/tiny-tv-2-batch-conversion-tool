@@ -1,31 +1,48 @@
 import queue
+import shutil
+import subprocess
+import sys
+from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
 
 from lib.convert_tab import ConvertTab
 from lib.combine_tab import CombineTab
 
-import sys
-from pathlib import Path
+def _app_base_dir() -> Path:
+    if getattr(sys, "frozen", False):
+        # Running from bundled EXE (PyInstaller)
+        return Path(getattr(sys, "_MEIPASS", Path.cwd()))
+    return Path(__file__).resolve().parent
 
-def get_ffmpeg_path():
-    if getattr(sys, 'frozen', False):
-        # Running from compiled exe
-        base = Path(sys._MEIPASS)
-    else:
-        # Running from source
-        base = Path(__file__).resolve().parent
-    return str(base / "bin" / "ffmpeg.exe")
+def _bin_candidate(exe_name: str) -> Path:
+    # exe_name should include extension on Windows (e.g., "ffmpeg.exe")
+    return _app_base_dir() / "bin" / exe_name
 
-def get_ffprobe_path():
-    if getattr(sys, 'frozen', False):
-        base = Path(sys._MEIPASS)
-    else:
-        base = Path(__file__).resolve().parent
-    return str(base / "bin" / "ffprobe.exe")
+def resolve_tool(preferred_name_with_ext: str, path_name_no_ext: str) -> str:
+    # Prefer local bin copy
+    local_path = _bin_candidate(preferred_name_with_ext)
+    if local_path.exists():
+        return str(local_path)
 
-FFMPEG_CMD = get_ffmpeg_path()
-FFPROBE_CMD = get_ffprobe_path()
+    # Fall back to system PATH
+    found = shutil.which(path_name_no_ext)
+    if found:
+        return found
+
+    # Last resort: return the bin path we expected (will fail validation later)
+    return str(local_path)
+
+def resolve_ffmpeg_path() -> str:
+    # Windows build ships ffmpeg.exe; PATH fallback is "ffmpeg"
+    return resolve_tool("ffmpeg.exe", "ffmpeg")
+
+def resolve_ffprobe_path() -> str:
+    return resolve_tool("ffprobe.exe", "ffprobe")
+
+
+FFMPEG_CMD = resolve_ffmpeg_path()
+FFPROBE_CMD = resolve_ffprobe_path()
 
 class TinyTVApp(tk.Tk):
     def __init__(self):
@@ -39,6 +56,8 @@ class TinyTVApp(tk.Tk):
         self._wire_tabs()
         self._wire_bottom_bar()
         self._start_log_pump()
+
+        self.after(0, self._validate_tools)
 
     def _build_layout(self):
         self.columnconfigure(0, weight=1)
@@ -103,7 +122,6 @@ class TinyTVApp(tk.Tk):
         self.link3.pack(side="left")
         self.link3.bind("<Button-1>", lambda e: self._open_link("https://github.com/sponsors/CodyTolene"))
         tk.Label(donate_frame, text=" appreciated!", padx=0, pady=0, borderwidth=0).pack(side="left")
-
 
     def _wire_tabs(self):
         self.convert_tab = ConvertTab(
@@ -209,6 +227,23 @@ class TinyTVApp(tk.Tk):
         import webbrowser
         webbrowser.open_new(url)
 
+    def _validate_tools(self):
+        def _works(cmd: str) -> bool:
+            try:
+                # Use -version which is fast and does not spawn windows
+                subprocess.run([cmd, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                return True
+            except Exception:
+                return False
+
+        if not _works(FFMPEG_CMD):
+            self.log_q.put(
+                "[ERROR] ffmpeg not found. "
+                "Install ffmpeg globally (and add to PATH) or place ffmpeg.exe in the app's bin/ folder."
+            )
+        
+        # if not _works(FFPROBE_CMD):
+        #     self.log_q.put("[WARN] ffprobe not found. Some features may be unavailable.")
 
 if __name__ == "__main__":
     TinyTVApp().mainloop()
