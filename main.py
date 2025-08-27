@@ -9,6 +9,7 @@ from lib.convert_tab import ConvertTab
 from lib.combine_tab import CombineTab
 
 APP_TITLE = "TinyTV 2 Batch Conversion Tool"
+VERSION = "1.0.0"
 
 def find_ffmpeg():
     base = Path(getattr(sys, "_MEIPASS", Path(__file__).parent)).resolve()
