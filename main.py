@@ -9,15 +9,18 @@ from tkinter import ttk
 from lib.convert_tab import ConvertTab
 from lib.combine_tab import CombineTab
 
+
 def _app_base_dir() -> Path:
     if getattr(sys, "frozen", False):
         # Running from bundled EXE (PyInstaller)
         return Path(getattr(sys, "_MEIPASS", Path.cwd()))
     return Path(__file__).resolve().parent
 
+
 def _bin_candidate(exe_name: str) -> Path:
     # exe_name should include extension on Windows (e.g., "ffmpeg.exe")
     return _app_base_dir() / "bin" / exe_name
+
 
 def resolve_tool(preferred_name_with_ext: str, path_name_no_ext: str) -> str:
     # Prefer local bin copy
@@ -33,9 +36,11 @@ def resolve_tool(preferred_name_with_ext: str, path_name_no_ext: str) -> str:
     # Last resort: return the bin path we expected (will fail validation later)
     return str(local_path)
 
+
 def resolve_ffmpeg_path() -> str:
     # Windows build ships ffmpeg.exe; PATH fallback is "ffmpeg"
     return resolve_tool("ffmpeg.exe", "ffmpeg")
+
 
 def resolve_ffprobe_path() -> str:
     return resolve_tool("ffprobe.exe", "ffprobe")
@@ -44,10 +49,11 @@ def resolve_ffprobe_path() -> str:
 FFMPEG_CMD = resolve_ffmpeg_path()
 FFPROBE_CMD = resolve_ffprobe_path()
 
+
 class TinyTVApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("TinyTV 2 Batch Conversion Tool")
+        self.title("Batch Conversion Tool for TinyTV® 2")
         self.geometry("980x640")
 
         self.log_q: queue.Queue[str] = queue.Queue()
@@ -77,7 +83,9 @@ class TinyTVApp(tk.Tk):
         btn_wrap = ttk.Frame(self.bottom_bar)
         btn_wrap.grid(row=0, column=1, sticky="e")
 
-        self.clear_log_btn = ttk.Button(btn_wrap, text="Clear log", command=self._clear_log)
+        self.clear_log_btn = ttk.Button(
+            btn_wrap, text="Clear log", command=self._clear_log
+        )
         self.clear_log_btn.pack(side="left", padx=(0, 8))
 
         self.convert_btn = ttk.Button(btn_wrap, text="Convert")
@@ -94,34 +102,55 @@ class TinyTVApp(tk.Tk):
         # Hyperlinks
         link_frame = ttk.Frame(self)
         link_frame.grid(row=3, column=0, sticky="ew", padx=10, pady=(0, 10))
-        link_frame.columnconfigure(0, weight=1)
-        link_frame.columnconfigure(1, weight=1)
-        link_frame.columnconfigure(2, weight=1)
+
+        # Four even columns
+        for i in range(4):
+            link_frame.columnconfigure(i, weight=1)
 
         # Author link
         author_frame = ttk.Frame(link_frame)
         author_frame.grid(row=0, column=0, sticky="w")
         tk.Label(author_frame, text="Author: ").pack(side="left")
-        self.link1 = tk.Label(author_frame, text="Cody Tolene", fg="blue", cursor="hand2")
+        self.link1 = tk.Label(
+            author_frame, text="Cody Tolene", fg="blue", cursor="hand2"
+        )
         self.link1.pack(side="left")
-        self.link1.bind("<Button-1>", lambda e: self._open_link("https://github.com/CodyTolene"))
+        self.link1.bind(
+            "<Button-1>", lambda e: self._open_link("https://github.com/CodyTolene")
+        )
 
         # Tiny Circuits link
         tinytv_frame = ttk.Frame(link_frame)
         tinytv_frame.grid(row=0, column=1)
         tk.Label(tinytv_frame, text="Purchase TinyTV 2: ").pack(side="left")
-        self.link2 = tk.Label(tinytv_frame, text="Tiny Circuits", fg="blue", cursor="hand2")
+        self.link2 = tk.Label(
+            tinytv_frame, text="Tiny Circuits", fg="blue", cursor="hand2"
+        )
         self.link2.pack(side="left")
-        self.link2.bind("<Button-1>", lambda e: self._open_link("https://www.tinycircuits.com/"))
+        self.link2.bind(
+            "<Button-1>", lambda e: self._open_link("https://www.tinycircuits.com/")
+        )
+
+        # FFmpeg link
+        ffmpeg_frame = ttk.Frame(link_frame)
+        ffmpeg_frame.grid(row=0, column=2)
+        tk.Label(ffmpeg_frame, text="Powered by ").pack(side="left")
+        self.link4 = tk.Label(ffmpeg_frame, text="FFmpeg", fg="blue", cursor="hand2")
+        self.link4.pack(side="left")
+        self.link4.bind("<Button-1>", lambda e: self._open_link("https://ffmpeg.org/"))
+        tk.Label(ffmpeg_frame, text=" (LGPLv2.1)").pack(side="left")
 
         # Donation link
         donate_frame = ttk.Frame(link_frame)
-        donate_frame.grid(row=0, column=2, sticky="e")
-        tk.Label(donate_frame, text="Any ", padx=0, pady=0, borderwidth=0).pack(side="left")
-        self.link3 = tk.Label(donate_frame, text="donation", fg="blue", cursor="hand2", padx=0, pady=0, borderwidth=0)
+        donate_frame.grid(row=0, column=3, sticky="e")
+        tk.Label(donate_frame, text="Any ").pack(side="left")
+        self.link3 = tk.Label(donate_frame, text="donation", fg="blue", cursor="hand2")
         self.link3.pack(side="left")
-        self.link3.bind("<Button-1>", lambda e: self._open_link("https://github.com/sponsors/CodyTolene"))
-        tk.Label(donate_frame, text=" appreciated!", padx=0, pady=0, borderwidth=0).pack(side="left")
+        self.link3.bind(
+            "<Button-1>",
+            lambda e: self._open_link("https://github.com/sponsors/CodyTolene"),
+        )
+        tk.Label(donate_frame, text=" appreciated!").pack(side="left")
 
     def _wire_tabs(self):
         self.convert_tab = ConvertTab(
@@ -159,7 +188,7 @@ class TinyTVApp(tk.Tk):
         if idx == 0:  # Convert
             self.combine_btn.pack_forget()
             self.convert_btn.pack(side="left")
-        else:         # Combine
+        else:  # Combine
             self.convert_btn.pack_forget()
             self.combine_btn.pack(side="left")
 
@@ -225,13 +254,19 @@ class TinyTVApp(tk.Tk):
 
     def _open_link(self, url: str):
         import webbrowser
+
         webbrowser.open_new(url)
 
     def _validate_tools(self):
         def _works(cmd: str) -> bool:
             try:
                 # Use -version which is fast and does not spawn windows
-                subprocess.run([cmd, "-version"], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
+                subprocess.run(
+                    [cmd, "-version"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    check=False,
+                )
                 return True
             except Exception:
                 return False
@@ -239,11 +274,15 @@ class TinyTVApp(tk.Tk):
         if not _works(FFMPEG_CMD):
             self.log_q.put(
                 "[ERROR] ffmpeg not found. "
-                "Install ffmpeg globally (and add to PATH) or place ffmpeg.exe in the app's bin/ folder."
+                "Install ffmpeg globally (and add to PATH) or place ffmpeg.exe "
+                + "in the app's bin/ folder."
             )
-        
+
         # if not _works(FFPROBE_CMD):
-        #     self.log_q.put("[WARN] ffprobe not found. Some features may be unavailable.")
+        #     self.log_q.put(
+        #         "[WARN] ffprobe not found. Some features may be unavailable."
+        #     )
+
 
 if __name__ == "__main__":
     TinyTVApp().mainloop()

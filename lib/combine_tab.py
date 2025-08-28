@@ -15,14 +15,17 @@ FAT32_MAX_FILE_BYTES = (4 * 1024 * 1024 * 1024) - 1  # 4GB - 1 byte
 # When there are many files, use concat demuxer to avoid Windows command-length limits
 CONCAT_LIST_THRESHOLD = 50
 
+
 def is_video(p: Path) -> bool:
     return p.suffix.lower() in set(VIDEO_EXTENSIONS)
+
 
 def pad2(text: str) -> str | None:
     try:
         return f"{int(text):02d}"
     except Exception:
         return None
+
 
 def fmt_bytes(n: int) -> str:
     try:
@@ -38,6 +41,7 @@ def fmt_bytes(n: int) -> str:
         return f"{gb:.2f} GB"
     except Exception:
         return "N/A"
+
 
 class CombineTab(ttk.Frame):
     def __init__(self, parent, *, log_q, ffmpeg_cmd: str):
@@ -60,16 +64,28 @@ class CombineTab(ttk.Frame):
 
     def _build_ui(self):
         list_wrap = ttk.Frame(self)
-        list_wrap.grid(row=0, column=0, columnspan=2, rowspan=6, sticky="nsew", padx=(10, 0), pady=10)
+        list_wrap.grid(
+            row=0,
+            column=0,
+            columnspan=2,
+            rowspan=6,
+            sticky="nsew",
+            padx=(10, 0),
+            pady=10,
+        )
         list_wrap.grid_columnconfigure(0, weight=1)
         list_wrap.grid_rowconfigure(0, weight=1)
 
         # Keep selection
-        self.listbox = tk.Listbox(list_wrap, selectmode=tk.EXTENDED, height=16, exportselection=False)
+        self.listbox = tk.Listbox(
+            list_wrap, selectmode=tk.EXTENDED, height=16, exportselection=False
+        )
         self.listbox.grid(row=0, column=0, sticky="nsew")
         self.listbox.bind("<<ListboxSelect>>", lambda _e=None: self._update_buttons())
 
-        vscroll = ttk.Scrollbar(list_wrap, orient="vertical", command=self.listbox.yview)
+        vscroll = ttk.Scrollbar(
+            list_wrap, orient="vertical", command=self.listbox.yview
+        )
         vscroll.grid(row=0, column=1, sticky="ns")
         self.listbox.config(yscrollcommand=vscroll.set)
 
@@ -79,27 +95,41 @@ class CombineTab(ttk.Frame):
         self.btn_add = ttk.Button(btn_col, text="Add files", command=self.add_files)
         self.btn_add.pack(pady=(0, 10), fill="x")
 
-        self.btn_up = ttk.Button(btn_col, text="Up", width=12, command=lambda: self.move_selected(-1))
+        self.btn_up = ttk.Button(
+            btn_col, text="Up", width=12, command=lambda: self.move_selected(-1)
+        )
         self.btn_up.pack(pady=2, fill="x")
 
-        self.btn_down = ttk.Button(btn_col, text="Down", width=12, command=lambda: self.move_selected(+1))
+        self.btn_down = ttk.Button(
+            btn_col, text="Down", width=12, command=lambda: self.move_selected(+1)
+        )
         self.btn_down.pack(pady=2, fill="x")
 
-        self.btn_remove = ttk.Button(btn_col, text="Remove", width=12, command=self.remove_selected)
+        self.btn_remove = ttk.Button(
+            btn_col, text="Remove", width=12, command=self.remove_selected
+        )
         self.btn_remove.pack(pady=2, fill="x")
 
-        self.btn_clear = ttk.Button(btn_col, text="Clear", width=12, command=self.clear_list)
+        self.btn_clear = ttk.Button(
+            btn_col, text="Clear", width=12, command=self.clear_list
+        )
         self.btn_clear.pack(pady=2, fill="x")
 
         self.out_var = tk.StringVar()
         out_row = ttk.Frame(self)
         out_row.grid(row=6, column=0, columnspan=3, sticky="we", padx=10, pady=(0, 10))
-        ttk.Button(out_row, text="Output folder", command=self.pick_folder).pack(side="left")
-        ttk.Entry(out_row, textvariable=self.out_var).pack(side="left", padx=(8, 0), fill="x", expand=True)
+        ttk.Button(out_row, text="Output folder", command=self.pick_folder).pack(
+            side="left"
+        )
+        ttk.Entry(out_row, textvariable=self.out_var).pack(
+            side="left", padx=(8, 0), fill="x", expand=True
+        )
 
         # Options row
         options_row = ttk.Frame(self)
-        options_row.grid(row=7, column=0, columnspan=3, sticky="we", padx=10, pady=(0, 4))
+        options_row.grid(
+            row=7, column=0, columnspan=3, sticky="we", padx=10, pady=(0, 4)
+        )
         for c in range(3):
             options_row.grid_columnconfigure(c, weight=1)
 
@@ -115,14 +145,18 @@ class CombineTab(ttk.Frame):
         name_group.grid(row=0, column=1, sticky="we")
         name_group.grid_columnconfigure(0, weight=0)
         name_group.grid_columnconfigure(1, weight=1)
-        ttk.Label(name_group, text="Output name").grid(row=0, column=0, sticky="e", padx=(0, 8))
+        ttk.Label(name_group, text="Output name").grid(
+            row=0, column=0, sticky="e", padx=(0, 8)
+        )
         self.name_var = tk.StringVar(value="combined_episodes.avi")
         self.name_entry = ttk.Entry(name_group, textvariable=self.name_var, width=32)
         self.name_entry.grid(row=0, column=1, sticky="w")
 
         size_group = ttk.Frame(options_row)
         size_group.grid(row=0, column=2, sticky="e")
-        self.size_label = ttk.Label(size_group, text="Estimated size: 0 B", foreground="black")
+        self.size_label = ttk.Label(
+            size_group, text="Estimated size: 0 B", foreground="black"
+        )
         self.size_label.pack(side="right")
 
         self.grid_columnconfigure(0, weight=3)
@@ -190,7 +224,9 @@ class CombineTab(ttk.Frame):
         # Enable/disable combine button
         if self._combine_btn is not None:
             try:
-                self._combine_btn.config(state=("disabled" if over or not self.files else "normal"))
+                self._combine_btn.config(
+                    state=("disabled" if over or not self.files else "normal")
+                )
             except Exception:
                 pass
 
@@ -256,7 +292,11 @@ class CombineTab(ttk.Frame):
         self._update_estimate()
 
     def pick_folder(self):
-        folder = filedialog.askdirectory(parent=self.winfo_toplevel(), title="Choose output folder", initialdir=self._last_dir)
+        folder = filedialog.askdirectory(
+            parent=self.winfo_toplevel(),
+            title="Choose output folder",
+            initialdir=self._last_dir,
+        )
         if folder:
             self.out_var.set(folder)
             self._last_dir = folder
@@ -269,7 +309,12 @@ class CombineTab(ttk.Frame):
 
     def spawn_ffmpeg(self, args: list[str]) -> int:
         try:
-            proc = subprocess.Popen(args, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, universal_newlines=True)
+            proc = subprocess.Popen(
+                args,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+            )
             for line in proc.stderr:
                 self.write_log(line.strip())
             return proc.wait()
@@ -278,11 +323,6 @@ class CombineTab(ttk.Frame):
             return 1
 
     def _run_concat_demuxer_reencode(self, files: list[Path], out_path: Path) -> int:
-        """
-        Use the concat demuxer with re-encode + stable timing filters.
-        This avoids the Windows command-length limit and prevents per-file
-        timestamp drift from accumulating.
-        """
         fd, list_path = tempfile.mkstemp(prefix="tinytv_concat_", suffix=".txt")
         try:
             path = Path(list_path)
@@ -290,20 +330,44 @@ class CombineTab(ttk.Frame):
                 for p in files:
                     f.write(f"file '{p.as_posix()}'\n")
 
-            self.write_log(f"[*] Using concat list ({len(files)} files) with re-encode for sync")
+            self.write_log(
+                f"[*] Using concat list ({len(files)} files) with re-encode for sync"
+            )
             cmd = [
-                self.ffmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y",
-                "-f", "concat", "-safe", "0", "-i", str(path),
-                "-fflags", "+genpts",
+                self.ffmpeg,
+                "-hide_banner",
+                "-loglevel",
+                "error",
+                "-stats",
+                "-y",
+                "-f",
+                "concat",
+                "-safe",
+                "0",
+                "-i",
+                str(path),
+                "-fflags",
+                "+genpts",
                 # Video timing + format
-                "-vf", "fps=12,format=yuvj420p,setsar=1",
-                "-r", "12",
-                "-c:v", "mjpeg", "-q:v", "16",
+                "-vf",
+                "fps=12,format=yuvj420p,setsar=1",
+                "-r",
+                "12",
+                "-c:v",
+                "mjpeg",
+                "-q:v",
+                "16",
                 # Audio timing + format
-                "-af", "aresample=async=1:min_hard_comp=0.100:first_pts=0,"
-                       "aformat=sample_fmts=u8:channel_layouts=mono,"
-                       "asetpts=PTS",
-                "-c:a", "pcm_u8", "-ar", "8000", "-ac", "1",
+                "-af",
+                "aresample=async=1:min_hard_comp=0.100:first_pts=0,"
+                "aformat=sample_fmts=u8:channel_layouts=mono,"
+                "asetpts=PTS",
+                "-c:a",
+                "pcm_u8",
+                "-ar",
+                "8000",
+                "-ac",
+                "1",
                 str(out_path),
             ]
             return self.spawn_ffmpeg(cmd)
@@ -321,7 +385,10 @@ class CombineTab(ttk.Frame):
 
         # Block if over FAT32 limit
         if self._estimate_over_limit:
-            self.write_log("[ERROR] Estimated output exceeds FAT32 single-file limit (~4GB). Remove files or split the batch.")
+            self.write_log(
+                "[ERROR] Estimated output exceeds FAT32 single-file limit (~4GB). "
+                + "Remove files or split the batch."
+            )
             return
 
         out_dir = self.out_var.get().strip() or str(Path.cwd())
@@ -332,11 +399,13 @@ class CombineTab(ttk.Frame):
         if chan_txt:
             p = pad2(chan_txt)
             if not p:
-                self.write_log("[ERROR] Channel must be a number (e.g. 01) or left blank.")
+                self.write_log(
+                    "[ERROR] Channel must be a number (e.g. 01) or left blank."
+                )
                 return
             chan_prefix = f"{p}_"
 
-        out_name = (self.name_var.get().strip() or "combined_episodes.avi")
+        out_name = self.name_var.get().strip() or "combined_episodes.avi"
         out_path = Path(out_dir) / f"{chan_prefix}{out_name}"
 
         def worker():
@@ -345,15 +414,32 @@ class CombineTab(ttk.Frame):
                     src = files[0]
                     self.write_log(f"[*] Transcoding single file -> {out_path.name}")
                     cmd = [
-                        self.ffmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y",
-                        "-i", str(src),
-                        "-vf", "fps=12,format=yuvj420p,setsar=1,setpts=N/12/TB",
-                        "-r", "12",
-                        "-c:v", "mjpeg", "-q:v", "16",
-                        "-c:a", "pcm_u8", "-ar", "8000", "-ac", "1",
-                        "-af", "aresample=async=1:min_hard_comp=0.100:first_pts=0,"
-                              "aformat=sample_fmts=u8:channel_layouts=mono,"
-                              "asetpts=N/SR/TB",
+                        self.ffmpeg,
+                        "-hide_banner",
+                        "-loglevel",
+                        "error",
+                        "-stats",
+                        "-y",
+                        "-i",
+                        str(src),
+                        "-vf",
+                        "fps=12,format=yuvj420p,setsar=1,setpts=N/12/TB",
+                        "-r",
+                        "12",
+                        "-c:v",
+                        "mjpeg",
+                        "-q:v",
+                        "16",
+                        "-c:a",
+                        "pcm_u8",
+                        "-ar",
+                        "8000",
+                        "-ac",
+                        "1",
+                        "-af",
+                        "aresample=async=1:min_hard_comp=0.100:first_pts=0,"
+                        "aformat=sample_fmts=u8:channel_layouts=mono,"
+                        "asetpts=N/SR/TB",
                         str(out_path),
                     ]
                     code = self.spawn_ffmpeg(cmd)
@@ -363,9 +449,12 @@ class CombineTab(ttk.Frame):
                         self.write_log("[ERROR] Combine failed.")
                     return
 
-                # If many files, use concat demuxer with re-encode for sync + short command line
+                # Use concat demuxer for MANY files (Windows string limits)
                 if len(files) >= CONCAT_LIST_THRESHOLD:
-                    self.write_log(f"[*] Joining {len(files)} AVI files with concat demuxer (re-encode) -> {out_path.name}")
+                    self.write_log(
+                        f"[*] Joining {len(files)} AVI files with concat demuxer "
+                        + f"(re-encode) -> {out_path.name}"
+                    )
                     code = self._run_concat_demuxer_reencode(files, out_path)
                     if code == 0:
                         self.write_log("[OK] Combine complete.")
@@ -373,7 +462,7 @@ class CombineTab(ttk.Frame):
                         self.write_log("[ERROR] Combine failed.")
                     return
 
-                # Otherwise, keep normalized per-input filter graph then concat (re-encode)
+                # Otherwise, keep normalized filter
                 inputs: list[str] = []
                 for p in files:
                     inputs.extend(["-i", str(p)])
@@ -383,7 +472,10 @@ class CombineTab(ttk.Frame):
                 for idx in range(len(files)):
                     v_lbl = f"v{idx}"
                     a_lbl = f"a{idx}"
-                    parts.append(f"[{idx}:v:0]fps=12,format=yuvj420p,setsar=1,setpts=N/12/TB[{v_lbl}]")
+                    parts.append(
+                        f"[{idx}:v:0]fps=12,format=yuvj420p,setsar=1,"
+                        + f"setpts=N/12/TB[{v_lbl}]"
+                    )
                     parts.append(
                         f"[{idx}:a:0]aresample=async=1:min_hard_comp=0.100:first_pts=0,"
                         f"aformat=sample_fmts=u8:channel_layouts=mono,"
@@ -396,13 +488,31 @@ class CombineTab(ttk.Frame):
                 filter_complex = ";".join(parts)
 
                 cmd = [
-                    self.ffmpeg, "-hide_banner", "-loglevel", "error", "-stats", "-y",
+                    self.ffmpeg,
+                    "-hide_banner",
+                    "-loglevel",
+                    "error",
+                    "-stats",
+                    "-y",
                     *inputs,
-                    "-filter_complex", filter_complex,
-                    "-map", "[v]", "-map", "[a]",
-                    "-r", "12",
-                    "-c:v", "mjpeg", "-q:v", "16",
-                    "-c:a", "pcm_u8", "-ar", "8000", "-ac", "1",
+                    "-filter_complex",
+                    filter_complex,
+                    "-map",
+                    "[v]",
+                    "-map",
+                    "[a]",
+                    "-r",
+                    "12",
+                    "-c:v",
+                    "mjpeg",
+                    "-q:v",
+                    "16",
+                    "-c:a",
+                    "pcm_u8",
+                    "-ar",
+                    "8000",
+                    "-ac",
+                    "1",
                     str(out_path),
                 ]
 

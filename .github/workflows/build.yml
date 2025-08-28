@@ -1,0 +1,47 @@
+name: Build Dev
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Code format check (Black)
+        run: py -m black . --check --diff
+
+      - name: Lint check (Flake8)
+        run: py -m flake8
+
+      - name: Download ffmpeg.exe
+        run: |
+          curl -L https://github.com/GyanD/codexffmpeg/releases/latest/download/ffmpeg-release-essentials.zip -o ffmpeg.zip
+          tar -xf ffmpeg.zip
+          move ffmpeg*/bin/ffmpeg.exe ffmpeg.exe
+
+      - name: Build exe
+        run: |
+          py -m PyInstaller main.py --onefile --name TinyTVConverter
+          copy ffmpeg.exe dist/
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TinyTVConverter-dev
+          path: dist/
