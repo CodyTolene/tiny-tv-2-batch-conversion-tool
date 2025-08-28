@@ -40,16 +40,20 @@ jobs:
           }
 
       - name: Download ffmpeg bundle and stage binaries
+        shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path bin | Out-Null
           iwr -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-full.7z -OutFile ffmpeg.7z
           7z x ffmpeg.7z -y | Out-Null
-          # Find the extracted full_build folder and its /bin
-          $root = Get-ChildItem -Directory -Recurse -Filter "*full_build*" | Select-Object -First 1
-          if (-not $root) { throw "Could not locate extracted ffmpeg *full_build* folder." }
-          $ffbin = Join-Path $root.FullName "bin"
-          if (-not (Test-Path $ffbin)) { throw "Could not locate ffmpeg bin folder." }
+
+          # Find the real ffmpeg.exe and copy its entire bin folder
+          $ffexe = Get-ChildItem -Recurse -Filter ffmpeg.exe | Select-Object -First 1
+          if (-not $ffexe) { throw "Could not locate ffmpeg.exe after extraction." }
+          $ffbin = Split-Path $ffexe.FullName -Parent
+          if (-not (Test-Path $ffbin)) { throw "Could not locate the ffmpeg bin folder." }
+
           Copy-Item "$ffbin\*.*" bin\ -Force
+
 
       - name: Build exe
         run: |
