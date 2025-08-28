@@ -15,6 +15,18 @@ FAT32_MAX_FILE_BYTES = (4 * 1024 * 1024 * 1024) - 1  # 4GB - 1 byte
 # When there are many files, use concat demuxer to avoid Windows command-length limits
 CONCAT_LIST_THRESHOLD = 50
 
+def _no_console_kwargs() -> dict:
+    """Return subprocess kwargs that suppress the console window on Windows."""
+    try:
+        import sys
+        import subprocess as _sp
+        if sys.platform.startswith("win"):
+            si = _sp.STARTUPINFO()
+            si.dwFlags |= _sp.STARTF_USESHOWWINDOW
+            return {"startupinfo": si, "creationflags": _sp.CREATE_NO_WINDOW}
+    except Exception:
+        pass
+    return {}
 
 def is_video(p: Path) -> bool:
     return p.suffix.lower() in set(VIDEO_EXTENSIONS)
@@ -314,6 +326,7 @@ class CombineTab(ttk.Frame):
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
+                **_no_console_kwargs(),
             )
             for line in proc.stderr:
                 self.write_log(line.strip())

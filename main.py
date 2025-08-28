@@ -22,6 +22,17 @@ def _bin_candidate(exe_name: str) -> Path:
     return _app_base_dir() / "bin" / exe_name
 
 
+def _no_console_kwargs() -> dict:
+    try:
+        if sys.platform.startswith("win"):
+            si = subprocess.STARTUPINFO()
+            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            return {"startupinfo": si, "creationflags": subprocess.CREATE_NO_WINDOW}
+    except Exception:
+        pass
+    return {}
+
+
 def resolve_tool(preferred_name_with_ext: str, path_name_no_ext: str) -> str:
     # Prefer local bin copy
     local_path = _bin_candidate(preferred_name_with_ext)
@@ -267,10 +278,10 @@ class TinyTVApp(tk.Tk):
                     stdout=subprocess.DEVNULL,
                     stderr=subprocess.DEVNULL,
                     check=False,
+                    **_no_console_kwargs(),
                 )
                 return True
             except Exception as e:
-                # extra visibility:
                 self.log_q.put(f"[DEBUG] ffmpeg check failed for '{cmd}': {e!r}")
                 return False
 

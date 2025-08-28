@@ -41,6 +41,21 @@ VIDEO_FILETYPES = [
 ]
 
 
+def _no_console_kwargs() -> dict:
+    """Return subprocess kwargs that suppress the console window on Windows."""
+    try:
+        import sys  # local import to avoid pollution
+        import subprocess as _sp
+
+        if sys.platform.startswith("win"):
+            si = _sp.STARTUPINFO()
+            si.dwFlags |= _sp.STARTF_USESHOWWINDOW
+            return {"startupinfo": si, "creationflags": _sp.CREATE_NO_WINDOW}
+    except Exception:
+        pass
+    return {}
+
+
 def fmt_hms(seconds: float | None) -> str:
     if seconds is None or seconds <= 0:
         return "N/A"
@@ -125,6 +140,7 @@ class FFmpegProcess:
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
+                **_no_console_kwargs(),
             )
             for line in proc.stderr:
                 self.log_q.put(line.strip())
@@ -158,7 +174,8 @@ class FFmpegProcess:
             if jpeg_preferred:
                 cmd += ["-q:v", str(q)]
             cmd += [tmp]
-            if subprocess.call(cmd) == 0:
+            res = subprocess.run(cmd, **_no_console_kwargs())
+            if res.returncode == 0 and os.path.exists(tmp):
                 return tmp
         except Exception:
             pass
@@ -195,7 +212,8 @@ class FFmpegProcess:
                 "-an",
                 tmp,
             ]
-            if subprocess.call(cmd) == 0 and os.path.exists(tmp):
+            res = subprocess.run(cmd, **_no_console_kwargs())
+            if res.returncode == 0 and os.path.exists(tmp):
                 size = os.path.getsize(tmp)
                 if size > 0 and sample_secs > 0:
                     return size / sample_secs
