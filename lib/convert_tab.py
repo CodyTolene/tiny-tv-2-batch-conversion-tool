@@ -54,11 +54,13 @@ def _no_console_kwargs() -> dict:
         pass
     return {}
 
+
 def fmt_bytes(n: int | None) -> str:
     if not n or n <= 0:
         return "N/A"
     mb = n / (1024 * 1024)
     return f"{mb:.2f} MB"
+
 
 def fmt_hms(seconds: float | None) -> str:
     if seconds is None or seconds <= 0:
@@ -880,7 +882,9 @@ class ConvertTab(ttk.Frame):
             self.length_label.config(text=f"Length: {fmt_hms(duration)}")
 
             try:
-                self.orig_size_label.config(text=f"Original size: {fmt_bytes(os.path.getsize(src))}")
+                self.orig_size_label.config(
+                    text=f"Original size: {fmt_bytes(os.path.getsize(src))}"
+                )
             except Exception:
                 self.orig_size_label.config(text="Original size: N/A")
 
@@ -923,11 +927,13 @@ class ConvertTab(ttk.Frame):
         if not (0 <= idx < len(self.files)):
             self.size_label.config(text="Estimated size: N/A")
             return
-        
+
         src = self.files[idx]
 
         try:
-            self.orig_size_label.config(text=f"Original size: {fmt_bytes(os.path.getsize(src))}")
+            self.orig_size_label.config(
+                text=f"Original size: {fmt_bytes(os.path.getsize(src))}"
+            )
         except Exception:
             self.orig_size_label.config(text="Original size: N/A")
 

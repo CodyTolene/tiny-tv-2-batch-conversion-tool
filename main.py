@@ -12,6 +12,7 @@ from lib.combine_tab import CombineTab
 APP_TITLE = "TinyTV® 2 Batch Conversion Tool"
 APP_VERSION = "1.0.0"
 
+
 def _app_base_dir() -> Path:
     if getattr(sys, "frozen", False):
         # Running from bundled EXE (PyInstaller)
