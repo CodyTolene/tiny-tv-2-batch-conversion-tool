@@ -42,19 +42,25 @@ jobs:
           }
 
       - name: Download ffmpeg bundle and stage binaries
-        shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path bin | Out-Null
           iwr -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-full.7z -OutFile ffmpeg.7z
           7z x ffmpeg.7z -y | Out-Null
 
-          # Find the real ffmpeg.exe and copy its entire bin folder
-          $ffexe = Get-ChildItem -Recurse -Filter ffmpeg.exe | Select-Object -First 1
-          if (-not $ffexe) { throw "Could not locate ffmpeg.exe after extraction." }
-          $ffbin = Split-Path $ffexe.FullName -Parent
-          if (-not (Test-Path $ffbin)) { throw "Could not locate the ffmpeg bin folder." }
+          # Locate the extracted ffmpeg bin\ (must contain ffmpeg.exe)
+          $extractedBin = Get-ChildItem -Directory -Recurse -Filter "bin" | Where-Object {
+            Test-Path (Join-Path $_.FullName "ffmpeg.exe")
+          } | Select-Object -First 1
 
-          Copy-Item "$ffbin\*.*" bin\ -Force
+          if (-not $extractedBin) { throw "Could not locate extracted ffmpeg bin folder." }
+
+          Copy-Item -Path (Join-Path $extractedBin.FullName "*") -Destination "bin" -Recurse -Force
+
+      - name: Verify staged FFmpeg binaries
+        run: |
+          if (-not (Test-Path bin\ffmpeg.exe)) { throw "ffmpeg.exe missing in bin\" }
+          if (-not (Test-Path bin\ffprobe.exe)) { throw "ffprobe.exe missing in bin\"" }
+          Write-Host "Found:"; Get-ChildItem bin\
 
       - name: Build exe
         run: |
@@ -66,9 +72,12 @@ jobs:
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           Copy-Item dist\TinyTVTool.exe artifacts\TinyTVTool.exe -Force
 
-      - name: Inspect EXE contents (should include bin/ffmpeg.exe)
+      # Onefile EXE can't be listed with 7z; check size to ensure payload present
+      - name: Sanity check EXE size (should be > 100MB)
         run: |
-          7z l artifacts\TinyTVTool.exe | findstr /i "bin/ffmpeg.exe"
+          $size = (Get-Item artifacts\TinyTVTool.exe).Length
+          Write-Host "EXE size: $size bytes"
+          if ($size -lt 100MB) { throw "EXE too small; likely missing ffmpeg payload." }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
