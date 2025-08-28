@@ -68,19 +68,15 @@ extra features to make preparing your videos easier, such as:
 - Automatically prepend filenames with channel numbers for easy sorting.
 - Merge multiple videos into a single output file.
 
-#### Preview <a name="preview"></a>
+#### Preview(s) <a name="preview"></a>
 
-<details>
-<summary>Convert Window Preview</summary>
+**"Convert" Tab Preview:**
 
 ![Convert Tab Screenshot][img-screenshot-01]
-</details>
 
-<details>
-<summary>Combine Window Preview</summary>
+**"Combine" Tab Preview:**
 
 ![Combine Tab Screenshot][img-screenshot-02]
-</details>
 
 <p align="right">[ <a href="#index">Index</a> ]</p>
 
