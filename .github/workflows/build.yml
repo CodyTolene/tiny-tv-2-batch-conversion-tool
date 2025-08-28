@@ -1,0 +1,95 @@
+name: build
+
+on:
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-test:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+
+      - name: Code format check (Black)
+        run: python -m black . --check --diff
+
+      - name: Lint check (Flake8)
+        run: python -m flake8
+
+      - name: Ensure 7-Zip is available
+        run: |
+          if (-not (Get-Command 7z -ErrorAction SilentlyContinue)) {
+            choco install 7zip -y
+            $env:Path += ";C:\Program Files\7-Zip"
+          }
+
+      - name: Download ffmpeg bundle and stage binaries
+        run: |
+          New-Item -ItemType Directory -Force -Path bin | Out-Null
+          $url = "https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-full.7z"
+          for ($i=0; $i -lt 3; $i++) {
+            try {
+              iwr -Uri $url -OutFile ffmpeg.7z -UseBasicParsing
+              if (Test-Path ffmpeg.7z) { break }
+            } catch { Start-Sleep -Seconds 3 }
+          }
+          if (-not (Test-Path ffmpeg.7z)) { throw "Failed to download ffmpeg after retries." }
+          7z x ffmpeg.7z -y | Out-Null
+          $extractedBin = Get-ChildItem -Directory -Recurse -Filter "bin" | Where-Object {
+            Test-Path (Join-Path $_.FullName "ffmpeg.exe")
+          } | Select-Object -First 1
+          if (-not $extractedBin) { throw "Could not locate extracted ffmpeg bin folder." }
+          Copy-Item -Path (Join-Path $extractedBin.FullName "*") -Destination "bin" -Recurse -Force
+
+      - name: Verify staged FFmpeg binaries
+        run: |
+          if (-not (Test-Path 'bin\ffmpeg.exe')) { throw 'ffmpeg.exe missing in bin' }
+          if (-not (Test-Path 'bin\ffprobe.exe')) { throw 'ffprobe.exe missing in bin' }
+          Write-Host 'Found:'; Get-ChildItem 'bin'
+          & 'bin\ffmpeg.exe' -version | Select-Object -First 1
+          & 'bin\ffprobe.exe' -version | Select-Object -First 1
+
+      - name: Verify app icon exists
+        run: |
+            if (-not (Test-Path 'icon.ico')) { throw 'icon.ico missing at repo root' }
+
+      - name: Build exe
+        run: |
+          python -m PyInstaller --onefile main.py `
+            --windowed `
+            --noconfirm `
+            --name TinyTV2BatchConversionTool `
+            --icon=icon.ico `
+            --add-data "bin;bin"
+          New-Item -ItemType Directory -Force -Path artifacts | Out-Null
+          Copy-Item dist\TinyTV2BatchConversionTool.exe artifacts\TinyTV2BatchConversionTool.exe -Force
+
+      # PyInstaller onefile EXEs are not listable with 7z; use a size heuristic instead
+      - name: Sanity check EXE size (should be > 100MB)
+        run: |
+          $size = (Get-Item artifacts\TinyTV2BatchConversionTool.exe).Length
+          Write-Host "EXE size: $size bytes"
+          if ($size -lt 100MB) { throw "EXE too small; likely missing ffmpeg payload." }
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TinyTV2BatchConversionTool-PR-${{ github.run_number }}
+          path: artifacts/TinyTV2BatchConversionTool.exe
+          if-no-files-found: error
