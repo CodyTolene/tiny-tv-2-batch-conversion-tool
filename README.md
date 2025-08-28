@@ -62,6 +62,7 @@ allows you to **batch** convert many video files at once. It also includes
 extra features to make preparing your videos easier, such as:
 
 - Converting an entire list of files in sequence.
+- Drastically reduce the file size, and display limits for the FAT32 file system.
 - Choose from different video quality output settings.
 - Automatically prepend filenames with channel numbers for easy sorting.
 - Merge multiple videos into a single output file.
