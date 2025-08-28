@@ -45,20 +45,21 @@ jobs:
           iwr -Uri https://www.gyan.dev/ffmpeg/builds/ffmpeg-git-full.7z -OutFile ffmpeg.7z
           7z x ffmpeg.7z -y | Out-Null
 
-          # Copy the entire extracted bin\ contents into our repo's bin\
           $extractedBin = Get-ChildItem -Directory -Recurse -Filter "bin" | Where-Object {
             Test-Path (Join-Path $_.FullName "ffmpeg.exe")
           } | Select-Object -First 1
 
-          if (-not $extractedBin) { throw "Could not locate extracted ffmpeg bin folder." }
+          if (-not $extractedBin) { throw 'Could not locate extracted ffmpeg bin folder.' }
 
-          Copy-Item -Path (Join-Path $extractedBin.FullName "*") -Destination "bin" -Recurse -Force
+          Copy-Item -Path (Join-Path $extractedBin.FullName '*') -Destination 'bin' -Recurse -Force
 
       - name: Verify staged FFmpeg binaries
         run: |
-          if (-not (Test-Path bin\ffmpeg.exe)) { throw "ffmpeg.exe missing in bin\" }
-          if (-not (Test-Path bin\ffprobe.exe)) { throw "ffprobe.exe missing in bin\"" }
-          Write-Host "Found:"; Get-ChildItem bin\
+          if (-not (Test-Path 'bin\ffmpeg.exe')) { throw 'ffmpeg.exe missing in bin' }
+          if (-not (Test-Path 'bin\ffprobe.exe')) { throw 'ffprobe.exe missing in bin' }
+          Write-Host 'Found:'; Get-ChildItem 'bin'
+          & 'bin\ffmpeg.exe' -version | Select-Object -First 1
+          & 'bin\ffprobe.exe' -version | Select-Object -First 1
 
       - name: Build exe
         run: |
