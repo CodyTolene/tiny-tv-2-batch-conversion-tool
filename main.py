@@ -63,6 +63,8 @@ class TinyTVApp(tk.Tk):
         self._wire_bottom_bar()
         self._start_log_pump()
 
+        self.log_q.put(f"ffmpeg path resolved to: {FFMPEG_CMD}")
+        
         self.after(0, self._validate_tools)
 
     def _build_layout(self):
