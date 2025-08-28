@@ -59,12 +59,16 @@ jobs:
       - name: Build exe
         run: |
           python -m PyInstaller --onefile main.py `
-          --windowed `
-          --noconfirm `
-          --name TinyTVTool `
-          --add-data "bin;bin"
+            --windowed `
+            --noconfirm `
+            --name TinyTVTool `
+            --add-data "bin;bin"
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
           Copy-Item dist\TinyTVTool.exe artifacts\TinyTVTool.exe -Force
+
+      - name: Inspect EXE contents (should include bin/ffmpeg.exe)
+        run: |
+          7z l artifacts\TinyTVTool.exe | findstr /i "bin/ffmpeg.exe"
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4

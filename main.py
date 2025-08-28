@@ -262,7 +262,6 @@ class TinyTVApp(tk.Tk):
     def _validate_tools(self):
         def _works(cmd: str) -> bool:
             try:
-                # Use -version which is fast and does not spawn windows
                 subprocess.run(
                     [cmd, "-version"],
                     stdout=subprocess.DEVNULL,
@@ -270,14 +269,24 @@ class TinyTVApp(tk.Tk):
                     check=False,
                 )
                 return True
-            except Exception:
+            except Exception as e:
+                # extra visibility:
+                self.log_q.put(f"[DEBUG] ffmpeg check failed for '{cmd}': {e!r}")
                 return False
+
+        # Helpful extra breadcrumbs
+        from pathlib import Path as _P
+
+        self.log_q.put(f"[DEBUG] _MEIPASS={getattr(sys, '_MEIPASS', None)}")
+        self.log_q.put(
+            f"[DEBUG] expecting ffmpeg at: {FFMPEG_CMD} "
+            + f"exists={_P(FFMPEG_CMD).exists()}"
+        )
 
         if not _works(FFMPEG_CMD):
             self.log_q.put(
-                "[ERROR] ffmpeg not found. "
-                "Install ffmpeg globally (and add to PATH) or place ffmpeg.exe "
-                + "in the app's bin/ folder."
+                "[ERROR] ffmpeg not found. Install ffmpeg globally (and add to PATH) "
+                "or place ffmpeg.exe in the app's bin/ folder."
             )
 
         # if not _works(FFPROBE_CMD):
