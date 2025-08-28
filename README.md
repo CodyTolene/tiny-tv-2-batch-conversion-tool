@@ -92,8 +92,9 @@ extra features to make preparing your videos easier, such as:
 
 ### Running (Windows) <a name="running-windows"></a>
 
-Go to the [releases page][url-releases] and download the latest `dist/main.exe`
-file. Once downloaded, run the executable to start the application.
+Go to the [releases page][url-releases] and download the latest
+`TinyTV2.Batch.Conversion.Tool.exe` file. Once downloaded, run the executable
+to start the application.
 
 <p align="right">[ <a href="#index">Index</a> ]</p>
 
@@ -258,6 +259,5 @@ Cody Tolene
 [url-license]: /LICENSE.md
 [url-new-issue]: https://github.com/CodyTolene/tiny-tv-2-batch-conversion-tool/issues
 [url-releases]: https://github.com/CodyTolene/tiny-tv-2-batch-conversion-tool/releases
-
 [url-tinytv-2-converter-app]: https://tinytv.us/TinyTV-Converter-App/
 [url-tinytv-2]: https://tinycircuits.com/products/tinytv-2
