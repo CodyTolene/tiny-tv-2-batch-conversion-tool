@@ -3,8 +3,6 @@ name: build
 on:
   pull_request:
     branches: [ main ]   # run on PRs into main
-  push:
-    branches: [ "**" ]   # run on push to any branch
 
 jobs:
   build-windows:
