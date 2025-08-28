@@ -65,26 +65,31 @@ jobs:
           & 'bin\ffmpeg.exe' -version | Select-Object -First 1
           & 'bin\ffprobe.exe' -version | Select-Object -First 1
 
+      - name: Verify app icon exists
+        run: |
+            if (-not (Test-Path 'icon.ico')) { throw 'icon.ico missing at repo root' }
+
       - name: Build exe
         run: |
           python -m PyInstaller --onefile main.py `
             --windowed `
             --noconfirm `
-            --name TinyTVTool `
+            --name TinyTV2BatchConversionTool `
+            --icon=icon.ico `
             --add-data "bin;bin"
           New-Item -ItemType Directory -Force -Path artifacts | Out-Null
-          Copy-Item dist\TinyTVTool.exe artifacts\TinyTVTool.exe -Force
+          Copy-Item dist\TinyTV2BatchConversionTool.exe artifacts\TinyTV2BatchConversionTool.exe -Force
 
       # PyInstaller onefile EXEs are not listable with 7z; use a size heuristic instead
       - name: Sanity check EXE size (should be > 100MB)
         run: |
-          $size = (Get-Item artifacts\TinyTVTool.exe).Length
+          $size = (Get-Item artifacts\TinyTV2BatchConversionTool.exe).Length
           Write-Host "EXE size: $size bytes"
           if ($size -lt 100MB) { throw "EXE too small; likely missing ffmpeg payload." }
 
       - name: Upload artifact
         uses: actions/upload-artifact@v4
         with:
-          name: TinyTVTool-PR-${{ github.run_number }}
-          path: artifacts/TinyTVTool.exe
+          name: TinyTV2BatchConversionTool-PR-${{ github.run_number }}
+          path: artifacts/TinyTV2BatchConversionTool.exe
           if-no-files-found: error

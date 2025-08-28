@@ -72,7 +72,7 @@ class CombineTab(ttk.Frame):
 
     def attach_combine_button(self, btn: ttk.Button):
         self._combine_btn = btn
-        self._update_estimate()  # Sync
+        self._update_estimate()
 
     def _build_ui(self):
         list_wrap = ttk.Frame(self)
@@ -216,7 +216,7 @@ class CombineTab(ttk.Frame):
         self.btn_clear.config(state=("normal" if self.files else "disabled"))
 
     def _update_estimate(self):
-        # File size estimate
+        # File final size estimate
         total = 0
         for p in self.files:
             try:

@@ -42,9 +42,8 @@ VIDEO_FILETYPES = [
 
 
 def _no_console_kwargs() -> dict:
-    """Return subprocess kwargs that suppress the console window on Windows."""
     try:
-        import sys  # local import to avoid pollution
+        import sys
         import subprocess as _sp
 
         if sys.platform.startswith("win"):
@@ -55,6 +54,11 @@ def _no_console_kwargs() -> dict:
         pass
     return {}
 
+def fmt_bytes(n: int | None) -> str:
+    if not n or n <= 0:
+        return "N/A"
+    mb = n / (1024 * 1024)
+    return f"{mb:.2f} MB"
 
 def fmt_hms(seconds: float | None) -> str:
     if seconds is None or seconds <= 0:
@@ -399,6 +403,9 @@ class ConvertTab(ttk.Frame):
 
         self.length_label = ttk.Label(self.preview_panel, text="Length: N/A")
         self.length_label.pack(side="top", anchor="w")
+
+        self.orig_size_label = ttk.Label(self.preview_panel, text="Original size: N/A")
+        self.orig_size_label.pack(side="top", anchor="w")
 
         self.size_label = ttk.Label(self.preview_panel, text="Estimated size: N/A")
         self.size_label.pack(side="top", anchor="w")
@@ -844,6 +851,7 @@ class ConvertTab(ttk.Frame):
             self.frame_w // 2, self.frame_h // 2, text="No preview"
         )
         self.length_label.config(text="Length: N/A")
+        self.orig_size_label.config(text="Original size: N/A")
         self.size_label.config(text="Estimated size: N/A")
 
     def _build_preview_and_info(self, src: Path):
@@ -870,6 +878,12 @@ class ConvertTab(ttk.Frame):
             if self._preview_target != src:
                 return
             self.length_label.config(text=f"Length: {fmt_hms(duration)}")
+
+            try:
+                self.orig_size_label.config(text=f"Original size: {fmt_bytes(os.path.getsize(src))}")
+            except Exception:
+                self.orig_size_label.config(text="Original size: N/A")
+
             if est_bytes is not None:
                 mb = est_bytes / (1024 * 1024)
                 self.size_label.config(text=f"Estimated size: {mb:.2f} MB")
@@ -909,7 +923,14 @@ class ConvertTab(ttk.Frame):
         if not (0 <= idx < len(self.files)):
             self.size_label.config(text="Estimated size: N/A")
             return
+        
         src = self.files[idx]
+
+        try:
+            self.orig_size_label.config(text=f"Original size: {fmt_bytes(os.path.getsize(src))}")
+        except Exception:
+            self.orig_size_label.config(text="Original size: N/A")
+
         duration = self._duration_cache.get(src)
         if duration is None:
             duration = self.probe.duration(src)

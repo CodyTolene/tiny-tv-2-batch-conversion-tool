@@ -155,7 +155,13 @@ To run the application directly from root for development (requires local ffmpeg
 To build `dist/main.exe` for production (requires ffmpeg in bin):
 
    ```bash
-   py -m PyInstaller --onefile --windowed main.py --add-binary "bin/ffmpeg.exe;bin"
+   py -m PyInstaller --onefile ^
+      --windowed ^
+      --noconfirm ^
+      --name TinyTV2BatchConversionTool ^
+      --icon=icon.ico ^
+      --add-data "bin;bin" ^
+      main.py
    ```
 
 <p align="right">[ <a href="#index">Index</a> ]</p>

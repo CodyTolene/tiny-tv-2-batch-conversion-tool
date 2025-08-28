@@ -9,6 +9,8 @@ from tkinter import ttk
 from lib.convert_tab import ConvertTab
 from lib.combine_tab import CombineTab
 
+APP_TITLE = "TinyTV® 2 Batch Conversion Tool"
+APP_VERSION = "1.0.0"
 
 def _app_base_dir() -> Path:
     if getattr(sys, "frozen", False):
@@ -64,7 +66,7 @@ FFPROBE_CMD = resolve_ffprobe_path()
 class TinyTVApp(tk.Tk):
     def __init__(self):
         super().__init__()
-        self.title("Batch Conversion Tool for TinyTV® 2")
+        self.title(f"{APP_TITLE} (v{APP_VERSION})")
         self.geometry("980x640")
 
         self.log_q: queue.Queue[str] = queue.Queue()
@@ -75,6 +77,7 @@ class TinyTVApp(tk.Tk):
         self._start_log_pump()
 
         self.log_q.put(f"ffmpeg path resolved to: {FFMPEG_CMD}")
+        self.log_q.put(f"{APP_TITLE} ready!")
 
         self.after(0, self._validate_tools)
 
@@ -285,14 +288,12 @@ class TinyTVApp(tk.Tk):
                 self.log_q.put(f"[DEBUG] ffmpeg check failed for '{cmd}': {e!r}")
                 return False
 
-        # Helpful extra breadcrumbs
-        from pathlib import Path as _P
-
-        self.log_q.put(f"[DEBUG] _MEIPASS={getattr(sys, '_MEIPASS', None)}")
-        self.log_q.put(
-            f"[DEBUG] expecting ffmpeg at: {FFMPEG_CMD} "
-            + f"exists={_P(FFMPEG_CMD).exists()}"
-        )
+        # from pathlib import Path as _P
+        # self.log_q.put(f"[DEBUG] _MEIPASS={getattr(sys, '_MEIPASS', None)}")
+        # self.log_q.put(
+        #     f"[DEBUG] expecting ffmpeg at: {FFMPEG_CMD} "
+        #     + f"exists={_P(FFMPEG_CMD).exists()}"
+        # )
 
         if not _works(FFMPEG_CMD):
             self.log_q.put(
