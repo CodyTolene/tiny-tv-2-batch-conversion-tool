@@ -17,6 +17,7 @@
 - [Intro](#intro)
   - [Official Tool](#official-tool)
   - [Batch Conversion Tool](#batch-tool)
+  - [Preview](#preview)
 - [User Guide](#user-guide)
   - [Running (Windows)](#running-windows)
 - [Development / Code Contribution](#local-development)
@@ -66,6 +67,20 @@ extra features to make preparing your videos easier, such as:
 - Choose from different video quality output settings.
 - Automatically prepend filenames with channel numbers for easy sorting.
 - Merge multiple videos into a single output file.
+
+#### Preview <a name="preview"></a>
+
+<details>
+<summary>Convert Window Preview</summary>
+
+![Convert Tab Screenshot][img-screenshot-01]
+</details>
+
+<details>
+<summary>Combine Window Preview</summary>
+
+![Combine Tab Screenshot][img-screenshot-02]
+</details>
 
 <p align="right">[ <a href="#index">Index</a> ]</p>
 
@@ -233,13 +248,16 @@ Cody Tolene
 <!-- IMAGE REFERENCES -->
 
 [img-info]: .github/images/ng-icons/info.svg
+[img-screenshot-01]: .github/images/screenshots/screen_01.png
+[img-screenshot-02]: .github/images/screenshots/screen_02.png
 [img-warn]: .github/images/ng-icons/warn.svg
 
 <!-- LINK REFERENCES -->
 
-[url-license]: /LICENSE.md
 [url-license-lgpl]: /LICENSE-LGPL.md
+[url-license]: /LICENSE.md
 [url-new-issue]: https://github.com/CodyTolene/tiny-tv-2-batch-conversion-tool/issues
 [url-releases]: https://github.com/CodyTolene/tiny-tv-2-batch-conversion-tool/releases
+
 [url-tinytv-2-converter-app]: https://tinytv.us/TinyTV-Converter-App/
 [url-tinytv-2]: https://tinycircuits.com/products/tinytv-2
