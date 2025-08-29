@@ -94,10 +94,14 @@ class CombineTab(ttk.Frame):
             # First try avg_frame_rate
             cmd = [
                 self.ffprobe,
-                "-v", "error",
-                "-select_streams", "v:0",
-                "-show_entries", "stream=avg_frame_rate,r_frame_rate",
-                "-of", "default=noprint_wrappers=1:nokey=1",
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=avg_frame_rate,r_frame_rate",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
                 str(path),
             ]
             out = subprocess.run(
@@ -471,7 +475,8 @@ class CombineTab(ttk.Frame):
                     f.write(f"file '{p.as_posix()}'\n")
 
             self.write_log(
-                f"[*] Using concat list ({len(files)} files) with re-encode for sync @ {fps} fps"
+                f"[*] Using concat list ({len(files)} files) with re-encode "
+                f"for sync @ {fps} fps"
             )
             cmd = [
                 self.ffmpeg,
@@ -571,7 +576,9 @@ class CombineTab(ttk.Frame):
             try:
                 if len(files) == 1:
                     src = files[0]
-                    self.write_log(f"[*] Transcoding single file @ {fps} fps -> {out_path.name}")
+                    self.write_log(
+                        f"[*] Transcoding single file @ {fps} fps -> {out_path.name}"
+                    )
                     cmd = [
                         self.ffmpeg,
                         "-hide_banner",
@@ -615,7 +622,8 @@ class CombineTab(ttk.Frame):
                 # Use concat demuxer for MANY files (Windows string limits)
                 if len(files) >= CONCAT_LIST_THRESHOLD:
                     self.write_log(
-                        f"[*] Joining {len(files)} AVI files with concat demuxer (re-encode) @ {fps} fps -> {out_path.name}"
+                        f"[*] Joining {len(files)} AVI files with concat demuxer "
+                        f"(re-encode) @ {fps} fps -> {out_path.name}"
                     )
                     code = self._run_concat_demuxer_reencode(files, out_path)
                     if code == 0:
@@ -682,7 +690,9 @@ class CombineTab(ttk.Frame):
                     str(out_path),
                 ]
 
-                self.write_log(f"[*] Joining {len(files)} AVI files @ {fps} fps -> {out_path.name}")
+                self.write_log(
+                    f"[*] Joining {len(files)} AVI files @ {fps} fps -> {out_path.name}"
+                )
                 code = self.spawn_ffmpeg(cmd)
                 if code == 0:
                     self.write_log("[OK] Combine complete.]")
