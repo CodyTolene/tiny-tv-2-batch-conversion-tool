@@ -127,11 +127,54 @@ class Probe:
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 universal_newlines=True,
+                **_no_console_kwargs(),
             )
             val = out.stdout.strip()
             return float(val) if val else None
         except Exception:
             return None
+
+    def stream_info(self, src: Path) -> dict:
+        info = {
+            "r_frame_rate": None,
+            "avg_frame_rate": None,
+            "nb_frames": None,
+            "duration": None,
+            "codec_tag_string": None,
+        }
+        try:
+            cmd = [
+                self.ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_streams",
+                "-show_format",
+                "-of",
+                "default=noprint_wrappers=1",
+                str(src),
+            ]
+            out = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                **_no_console_kwargs(),
+            ).stdout
+            for line in out.splitlines():
+                if "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip()
+                if k in info:
+                    info[k] = v
+                if k == "duration" and not info["duration"]:
+                    info["duration"] = v
+            return info
+        except Exception:
+            return info
 
 
 class FFmpegProcess:
@@ -194,29 +237,47 @@ class FFmpegProcess:
             fd, tmp = tempfile.mkstemp(prefix="tinytv_cal_", suffix=".avi")
             os.close(fd)
             cmd = [
-                self.ffmpeg,
+                self.ffmpeg,  # Path to the ffmpeg executable
+                # Suppresses startup banner/info from ffmpeg for cleaner logs
                 "-hide_banner",
                 "-loglevel",
-                "error",
-                "-y",
+                "error",  # Only show error messages (no warnings or info)
+                "-y",  # Automatically overwrite output files without asking
                 "-ss",
-                "0",
+                "0",  # Start time offset, 0 means start from the beginning
                 "-t",
-                f"{sample_secs}",
+                f"{sample_secs}",  # Duration, only process this many seconds of video
+                "-fflags",
+                # Force ffmpeg to generate presentation timestamps, avoids sync issues
+                "+genpts",
+                # Reset time base when copying streams, keep timestamps consistent
+                "-copytb",
+                "0",
                 "-i",
-                str(src),
+                str(src),  # Input file (path to source video)
+                # `vf` → user-supplied filter string (like scaling, cropping, etc.)
                 "-vf",
-                vf,
+                # `fps={fps}` → enforce a fixed frames-per-second output
+                f"{vf},fps={int(fps)}",
                 "-r",
+                # Explicitly set output frame rate, ensures fps is locked
                 str(fps),
+                "-vsync",
+                "cfr",  # Constant frame rate output (duplicate/drop frames as needed)
                 "-pix_fmt",
+                # Pixel format: YUV 4:2:0 JPEG variant (TinyTV 2 Expects this)
                 "yuvj420p",
                 "-c:v",
+                # Video codec, `mjpeg` for TinyTV AVI support
                 vcodec,
+                "-vtag",
+                # Force AVI FourCC tag to "MJPG" to ensure device compatibility
+                "MJPG",
                 "-q:v",
+                # Video quality level (1 = best, 31 = worst).
                 str(int(q)),
                 "-an",
-                tmp,
+                tmp,  # Output file path
             ]
             res = subprocess.run(cmd, **_no_console_kwargs())
             if res.returncode == 0 and os.path.exists(tmp):
@@ -501,9 +562,10 @@ class ConvertTab(ttk.Frame):
         options_row.grid(
             row=7, column=0, columnspan=4, sticky="we", padx=10, pady=(0, 4)
         )
-        for col in range(3):
+        for col in range(4):
             options_row.grid_columnconfigure(col, weight=1)
 
+        # Channel
         chan_group = ttk.Frame(options_row)
         chan_group.grid(row=0, column=0, sticky="w")
         ttk.Label(chan_group, text="Channel prefix (optional)").pack(side="left")
@@ -514,6 +576,7 @@ class ConvertTab(ttk.Frame):
         self.channel_entry.pack(side="left", padx=(8, 0))
         self._attach_placeholder(self.channel_entry, "e.g. 01")
 
+        # Scaling
         scale_group = ttk.Frame(options_row)
         scale_group.grid(row=0, column=1, sticky="we")
         ttk.Label(scale_group, text="Scaling:").pack(side="left", padx=(0, 8))
@@ -540,6 +603,7 @@ class ConvertTab(ttk.Frame):
             command=self._schedule_preview_update,
         ).pack(side="left")
 
+        # Audio normalize
         norm_group = ttk.Frame(options_row)
         norm_group.grid(row=0, column=2, sticky="e")
         self.normalize_audio_var = tk.BooleanVar(value=False)
@@ -548,6 +612,21 @@ class ConvertTab(ttk.Frame):
             text="Normalize / Boost audio",
             variable=self.normalize_audio_var,
         ).pack(side="right")
+
+        # FPS selector
+        fps_group = ttk.Frame(options_row)
+        fps_group.grid(row=0, column=3, sticky="e", padx=(8, 0))
+        ttk.Label(fps_group, text="FPS:").pack(side="left")
+        self.fps_var = tk.StringVar(value=str(self.fps))
+        self.fps_box = ttk.Combobox(
+            fps_group,
+            textvariable=self.fps_var,
+            values=["12", "24"],
+            width=5,
+            state="readonly",
+        )
+        self.fps_box.pack(side="left", padx=(6, 0))
+        self.fps_box.bind("<<ComboboxSelected>>", self._on_fps_change)
 
         # Quality row
         q_row = ttk.Frame(self)
@@ -689,6 +768,19 @@ class ConvertTab(ttk.Frame):
                 self.empty_hint.grid_forget()
             except Exception:
                 pass
+
+    def _on_fps_change(self, _evt=None):
+        try:
+            new_fps = int(self.fps_var.get())
+            if new_fps not in (12, 24):
+                new_fps = 12
+        except Exception:
+            new_fps = 12
+        self.fps = new_fps
+        self.sizer.fps = new_fps
+        self.update_controls()
+        self._schedule_preview_update(debounce=True)
+        self.log_q.put(f"[info] Target FPS set to {self.fps}")
 
     def add_files(self, listbox: tk.Listbox, store: list[Path]):
         try:
@@ -959,6 +1051,142 @@ class ConvertTab(ttk.Frame):
             return
         self._convert_files(list(self.files))
 
+    def _build_base_cmd(
+        self, src: Path, dst: Path, vf_fps: str, q_val: int, fix_pass: bool
+    ) -> list[str]:
+        pre_input = []
+        if fix_pass:
+            pre_input = ["-fflags", "+genpts", "-copytb", "0"]
+
+        cmd = [
+            self.ff.ffmpeg,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-stats",
+            "-y",
+            *pre_input,
+            "-i",
+            str(src),
+            "-vf",
+            vf_fps,
+            "-r",
+            str(int(self.fps)),
+            "-vsync",
+            "cfr",
+            "-pix_fmt",
+            "yuvj420p",
+            "-c:v",
+            self.vcodec,
+            "-vtag",
+            "MJPG",
+            "-q:v",
+            str(q_val),
+            "-c:a",
+            self.acodec,
+            "-ar",
+            self.arate,
+            "-ac",
+            self.ach,
+        ]
+        af = self._af()
+        cmd += af
+        cmd += [str(dst)]
+        return cmd
+
+    def _validate_and_maybe_fix(
+        self, dst: Path, src: Path, vf_fps: str, q_val: int
+    ) -> bool:
+        """
+        Returns True if the file is valid (or fixed successfully), False if failed.
+        Validation rules:
+          - r_frame_rate == "{fps}/1"
+          - avg_frame_rate == "{fps}/1"
+          - if nb_frames and duration are present, |nb_frames/fps - duration| < 0.25s
+        If validation fails, re-encode once with extra flags to regenerate timestamps.
+        """
+        fps_str = f"{int(self.fps)}/1"
+        info = self.probe.stream_info(dst)
+        r = (info.get("r_frame_rate") or "").strip()
+        a = (info.get("avg_frame_rate") or "").strip()
+        nb = info.get("nb_frames")
+        dur = info.get("duration")
+        tag = (info.get("codec_tag_string") or "").strip()
+        ok_rates = (r == fps_str) and (a == fps_str)
+        ok_tag = (tag.upper() in ("MJPG", "MJPG0", "MJPG ")) or (tag == "")
+
+        ok_duration = True
+        try:
+            if nb and nb.isdigit() and dur:
+                nb_i = int(nb)
+                dur_f = float(dur)
+                expected = nb_i / float(self.fps)
+                ok_duration = abs(expected - dur_f) < 0.25
+        except Exception:
+            ok_duration = True
+
+        if ok_rates and ok_duration and ok_tag:
+            self.log_q.put(f"[ok] Validated {dst.name} (r={r}, avg={a}, tag={tag})")
+            return True
+
+        self.log_q.put(
+            f"[warn] Validation failed for {dst.name} (r={r}, avg={a}, tag={tag});"
+            + " re-encoding with PTS fix..."
+        )
+        tmp_fixed = dst.with_suffix(".tmp_fix.avi")
+        cmd_fix = self._build_base_cmd(src, tmp_fixed, vf_fps, q_val, fix_pass=True)
+        code2 = self.ff.run(cmd_fix)
+        if code2 != 0 or not tmp_fixed.exists():
+            self.log_q.put(f"[ERROR] Re-encode with PTS fix failed for {dst.name}")
+            try:
+                if tmp_fixed.exists():
+                    tmp_fixed.unlink()
+            except Exception:
+                pass
+            return False
+
+        try:
+            dst.unlink(missing_ok=True)
+            tmp_fixed.replace(dst)
+        except Exception as e:
+            self.log_q.put(f"[ERROR] Could not replace original with fixed file: {e}")
+            try:
+                if tmp_fixed.exists():
+                    tmp_fixed.unlink()
+            except Exception:
+                pass
+            return False
+
+        info2 = self.probe.stream_info(dst)
+        r2 = (info2.get("r_frame_rate") or "").strip()
+        a2 = (info2.get("avg_frame_rate") or "").strip()
+        tag2 = (info2.get("codec_tag_string") or "").strip()
+        nb2 = info2.get("nb_frames")
+        dur2 = info2.get("duration")
+        ok_rates2 = (r2 == fps_str) and (a2 == fps_str)
+        ok_tag2 = (tag2.upper() in ("MJPG", "MJPG0", "MJPG ")) or (tag2 == "")
+        ok_duration2 = True
+        try:
+            if nb2 and nb2.isdigit() and dur2:
+                nb_i2 = int(nb2)
+                dur_f2 = float(dur2)
+                expected2 = nb_i2 / float(self.fps)
+                ok_duration2 = abs(expected2 - dur_f2) < 0.25
+        except Exception:
+            ok_duration2 = True
+
+        if ok_rates2 and ok_tag2 and ok_duration2:
+            self.log_q.put(
+                f"[ok] Fixed & validated {dst.name} (r={r2}, avg={a2}, tag={tag2})"
+            )
+            return True
+
+        self.log_q.put(
+            f"[warn] File still looks odd after fix (r={r2}, avg={a2}, tag={tag2}). "
+            + "Proceeding anyway."
+        )
+        return True
+
     def _convert_files(self, files: list[Path]):
         if self.is_running:
             return
@@ -990,7 +1218,7 @@ class ConvertTab(ttk.Frame):
         self.progress["value"] = 0
 
         vf = self._vf()
-        af = self._af()
+        vf_fps = f"{vf},fps={int(self.fps)}"
         q_val = int(self.quality_var.get())
 
         def worker():
@@ -1000,39 +1228,17 @@ class ConvertTab(ttk.Frame):
                 prefix = f"{chan}_" if chan else ""
                 dst = Path(out_dir) / f"{prefix}{base}.avi"
                 self.log_q.put(f"[*] Converting {src.name} -> {dst.name}")
-                cmd = [
-                    self.ff.ffmpeg,
-                    "-hide_banner",
-                    "-loglevel",
-                    "error",
-                    "-stats",
-                    "-y",
-                    "-i",
-                    str(src),
-                    "-vf",
-                    vf,
-                    "-r",
-                    str(self.fps),
-                    "-pix_fmt",
-                    "yuvj420p",
-                    "-c:v",
-                    self.vcodec,
-                    "-q:v",
-                    str(q_val),
-                    "-c:a",
-                    AUDIO_CODEC,
-                    "-ar",
-                    AUDIO_RATE,
-                    "-ac",
-                    AUDIO_CHANNELS,
-                    *af,
-                    str(dst),
-                ]
+
+                cmd = self._build_base_cmd(src, dst, vf_fps, q_val, fix_pass=False)
                 code = self.ff.run(cmd)
                 self.progress["value"] = idx
                 self.progress.update_idletasks()
-                if code != 0:
+                if code != 0 or not dst.exists():
                     self.log_q.put(f"[ERROR] Conversion failed: {src}")
+                    ok = False
+                    break
+
+                if not self._validate_and_maybe_fix(dst, src, vf_fps, q_val):
                     ok = False
                     break
 
