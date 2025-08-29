@@ -17,7 +17,6 @@ CONCAT_LIST_THRESHOLD = 50
 
 
 def _no_console_kwargs() -> dict:
-    """Return subprocess kwargs that suppress the console window on Windows."""
     try:
         import sys
         import subprocess as _sp
@@ -63,15 +62,87 @@ class CombineTab(ttk.Frame):
         super().__init__(parent)
         self.log_q = log_q
         self.ffmpeg = ffmpeg_cmd
+        self.ffprobe = self._guess_ffprobe(ffmpeg_cmd)
 
         self.files: list[Path] = []
         self._last_dir = str(Path.home())
         self._combine_btn: ttk.Button | None = None
         self._estimate_over_limit = False
 
+        # FPS
+        self._fps_cache: dict[Path, float] = {}
+        self.fps_var = tk.StringVar(value="12")
+
         self._build_ui()
         self._update_buttons()
         self._update_estimate()
+
+    def _guess_ffprobe(self, ffmpeg_cmd: str) -> str:
+        try:
+            p = Path(ffmpeg_cmd)
+            name = p.name.lower()
+            if name.startswith("ffmpeg"):
+                candidate = p.with_name(name.replace("ffmpeg", "ffprobe"))
+                if candidate.exists():
+                    return str(candidate)
+        except Exception:
+            pass
+        return "ffprobe"
+
+    def _probe_fps(self, path: Path) -> float | None:
+        try:
+            # First try avg_frame_rate
+            cmd = [
+                self.ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "v:0",
+                "-show_entries",
+                "stream=avg_frame_rate,r_frame_rate",
+                "-of",
+                "default=noprint_wrappers=1:nokey=1",
+                str(path),
+            ]
+            out = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                **_no_console_kwargs(),
+            )
+            lines = [ln.strip() for ln in out.stdout.splitlines() if ln.strip()]
+            for token in lines:
+                if token and token != "0/0":
+                    if "/" in token:
+                        num, den = token.split("/", 1)
+                        try:
+                            num = float(num.strip())
+                            den = float(den.strip())
+                            if den != 0:
+                                fps = num / den
+                                if fps > 0:
+                                    return fps
+                        except Exception:
+                            continue
+                    else:
+                        try:
+                            fps = float(token)
+                            if fps > 0:
+                                return fps
+                        except Exception:
+                            continue
+        except Exception:
+            pass
+        return None
+
+    def _get_cached_fps(self, p: Path) -> float:
+        if p not in self._fps_cache:
+            fps = self._probe_fps(p)
+            if fps is None or fps <= 0:
+                fps = 12.0
+            self._fps_cache[p] = fps
+        return self._fps_cache[p]
 
     def attach_combine_button(self, btn: ttk.Button):
         self._combine_btn = btn
@@ -145,9 +216,10 @@ class CombineTab(ttk.Frame):
         options_row.grid(
             row=7, column=0, columnspan=3, sticky="we", padx=10, pady=(0, 4)
         )
-        for c in range(3):
+        for c in range(4):
             options_row.grid_columnconfigure(c, weight=1)
 
+        # Channel (col 0)
         chan_group = ttk.Frame(options_row)
         chan_group.grid(row=0, column=0, sticky="w")
         ttk.Label(chan_group, text="Channel prefix (optional)").pack(side="left")
@@ -156,6 +228,7 @@ class CombineTab(ttk.Frame):
         self.chan_entry.pack(side="left", padx=(8, 0))
         self._attach_placeholder(self.chan_entry, "e.g. 01")
 
+        # Output name (col 1)
         name_group = ttk.Frame(options_row)
         name_group.grid(row=0, column=1, sticky="we")
         name_group.grid_columnconfigure(0, weight=0)
@@ -163,12 +236,27 @@ class CombineTab(ttk.Frame):
         ttk.Label(name_group, text="Output name").grid(
             row=0, column=0, sticky="e", padx=(0, 8)
         )
-        self.name_var = tk.StringVar(value="combined_episodes.avi")
+        self.name_var = tk.StringVar(value="combined_episodes")
         self.name_entry = ttk.Entry(name_group, textvariable=self.name_var, width=32)
         self.name_entry.grid(row=0, column=1, sticky="w")
 
+        # FPS selector (col 2)
+        fps_group = ttk.Frame(options_row)
+        fps_group.grid(row=0, column=2, sticky="e")
+        ttk.Label(fps_group, text="FPS").pack(side="left", padx=(0, 6))
+        self.fps_box = ttk.Combobox(
+            fps_group,
+            textvariable=self.fps_var,
+            values=["12", "24"],
+            width=6,
+            state="readonly",
+        )
+        self.fps_box.pack(side="left")
+        self.fps_box.bind("<<ComboboxSelected>>", lambda _e=None: self._fps_changed())
+
+        # Estimated size (col 3)
         size_group = ttk.Frame(options_row)
-        size_group.grid(row=0, column=2, sticky="e")
+        size_group.grid(row=0, column=3, sticky="e")
         self.size_label = ttk.Label(
             size_group, text="Estimated size: 0 B", foreground="black"
         )
@@ -180,6 +268,16 @@ class CombineTab(ttk.Frame):
         for r in range(8):
             self.grid_rowconfigure(r, weight=0)
         self.grid_rowconfigure(5, weight=1)
+
+    def _fps_changed(self):
+        try:
+            fps = int(self.fps_var.get())
+        except Exception:
+            fps = 12
+            self.fps_var.set("12")
+        self.write_log(f"[*] Target FPS set to {fps}")
+        # Recompute estimate using per-file source fps
+        self._update_estimate()
 
     def _attach_placeholder(self, entry: tk.Entry, placeholder: str):
         entry._placeholder = placeholder
@@ -203,6 +301,19 @@ class CombineTab(ttk.Frame):
         entry.bind("<FocusIn>", clear)
         entry.bind("<FocusOut>", restore)
 
+    def _read_entry(self, entry: tk.Entry) -> str:
+        val = entry.get().strip()
+        try:
+            if (
+                getattr(entry, "_placeholder", None)
+                and val == entry._placeholder
+                and entry.cget("foreground") == "gray"
+            ):
+                return ""
+        except Exception:
+            pass
+        return val
+
     def refresh_list(self):
         self.listbox.delete(0, tk.END)
         for p in self.files:
@@ -219,24 +330,30 @@ class CombineTab(ttk.Frame):
         self.btn_clear.config(state=("normal" if self.files else "disabled"))
 
     def _update_estimate(self):
-        # File final size estimate
+        try:
+            target_fps = int(self.fps_var.get())
+        except Exception:
+            target_fps = 12
+
         total = 0
         for p in self.files:
             try:
-                total += p.stat().st_size
+                src_size = p.stat().st_size
             except Exception:
-                pass
+                continue
+            src_fps = self._get_cached_fps(p)  # Get fps
+            # Avoid divide-by-zero, on fail returns 12.0
+            ratio = max(0.1, float(target_fps) / max(0.1, src_fps))
+            total += int(src_size * ratio)
 
         txt = f"Estimated size: {fmt_bytes(total)}"
         over = total > FAT32_MAX_FILE_BYTES
 
-        # Update label color, red if over limit
         try:
             self.size_label.config(text=txt, foreground=("red" if over else "black"))
         except Exception:
             pass
 
-        # Enable/disable combine button
         if self._combine_btn is not None:
             try:
                 self._combine_btn.config(
@@ -265,6 +382,8 @@ class CombineTab(ttk.Frame):
         if picks:
             self._last_dir = str(Path(picks[0]).parent)
             self.files.extend(picks)
+            for p in picks:
+                _ = self._get_cached_fps(p)
             self.refresh_list()
 
     def remove_selected(self):
@@ -273,11 +392,13 @@ class CombineTab(ttk.Frame):
             return
         for idx in reversed(sel):
             if 0 <= idx < len(self.files):
-                self.files.pop(idx)
+                p = self.files.pop(idx)
+                self._fps_cache.pop(p, None)
         self.refresh_list()
 
     def clear_list(self):
         self.files.clear()
+        self._fps_cache.clear()
         self.refresh_list()
 
     def move_selected(self, delta: int):
@@ -339,6 +460,13 @@ class CombineTab(ttk.Frame):
             return 1
 
     def _run_concat_demuxer_reencode(self, files: list[Path], out_path: Path) -> int:
+        # Use selected fps
+        try:
+            fps = int(self.fps_var.get())
+        except Exception:
+            fps = 12
+            self.fps_var.set("12")
+
         fd, list_path = tempfile.mkstemp(prefix="tinytv_concat_", suffix=".txt")
         try:
             path = Path(list_path)
@@ -347,7 +475,8 @@ class CombineTab(ttk.Frame):
                     f.write(f"file '{p.as_posix()}'\n")
 
             self.write_log(
-                f"[*] Using concat list ({len(files)} files) with re-encode for sync"
+                f"[*] Using concat list ({len(files)} files) with re-encode "
+                f"for sync @ {fps} fps"
             )
             cmd = [
                 self.ffmpeg,
@@ -366,18 +495,22 @@ class CombineTab(ttk.Frame):
                 "+genpts",
                 # Video timing + format
                 "-vf",
-                "fps=12,format=yuvj420p,setsar=1",
+                f"fps={fps},format=yuvj420p,setsar=1,setpts=N/{fps}/TB",
                 "-r",
-                "12",
+                str(fps),
+                "-vsync",
+                "cfr",
                 "-c:v",
                 "mjpeg",
+                "-vtag",
+                "MJPG",
                 "-q:v",
                 "16",
                 # Audio timing + format
                 "-af",
                 "aresample=async=1:min_hard_comp=0.100:first_pts=0,"
                 "aformat=sample_fmts=u8:channel_layouts=mono,"
-                "asetpts=PTS",
+                "asetpts=N/SR/TB",
                 "-c:a",
                 "pcm_u8",
                 "-ar",
@@ -410,7 +543,8 @@ class CombineTab(ttk.Frame):
         out_dir = self.out_var.get().strip() or str(Path.cwd())
         Path(out_dir).mkdir(parents=True, exist_ok=True)
 
-        chan_txt = self.chan_var.get().strip()
+        # Channel
+        chan_txt = self._read_entry(self.chan_entry)
         chan_prefix = ""
         if chan_txt:
             p = pad2(chan_txt)
@@ -421,14 +555,30 @@ class CombineTab(ttk.Frame):
                 return
             chan_prefix = f"{p}_"
 
-        out_name = self.name_var.get().strip() or "combined_episodes.avi"
-        out_path = Path(out_dir) / f"{chan_prefix}{out_name}"
+        # Output name
+        raw_name = self._read_entry(self.name_entry) or "combined_episodes"
+        name = raw_name.strip()
+        if name.lower().endswith(".avi"):
+            name = name[:-4]  # remove extension the user added
+        if not name:
+            name = "combined_episodes"
+
+        out_path = Path(out_dir) / f"{chan_prefix}{name}.avi"
+
+        # FPS
+        try:
+            fps = int(self.fps_var.get())
+        except Exception:
+            fps = 12
+            self.fps_var.set("12")
 
         def worker():
             try:
                 if len(files) == 1:
                     src = files[0]
-                    self.write_log(f"[*] Transcoding single file -> {out_path.name}")
+                    self.write_log(
+                        f"[*] Transcoding single file @ {fps} fps -> {out_path.name}"
+                    )
                     cmd = [
                         self.ffmpeg,
                         "-hide_banner",
@@ -439,11 +589,15 @@ class CombineTab(ttk.Frame):
                         "-i",
                         str(src),
                         "-vf",
-                        "fps=12,format=yuvj420p,setsar=1,setpts=N/12/TB",
+                        f"fps={fps},format=yuvj420p,setsar=1,setpts=N/{fps}/TB",
                         "-r",
-                        "12",
+                        str(fps),
+                        "-vsync",
+                        "cfr",
                         "-c:v",
                         "mjpeg",
+                        "-vtag",
+                        "MJPG",
                         "-q:v",
                         "16",
                         "-c:a",
@@ -469,7 +623,7 @@ class CombineTab(ttk.Frame):
                 if len(files) >= CONCAT_LIST_THRESHOLD:
                     self.write_log(
                         f"[*] Joining {len(files)} AVI files with concat demuxer "
-                        + f"(re-encode) -> {out_path.name}"
+                        f"(re-encode) @ {fps} fps -> {out_path.name}"
                     )
                     code = self._run_concat_demuxer_reencode(files, out_path)
                     if code == 0:
@@ -478,7 +632,7 @@ class CombineTab(ttk.Frame):
                         self.write_log("[ERROR] Combine failed.")
                     return
 
-                # Otherwise, keep normalized filter
+                # Otherwise, normalize each input to target fps and concat
                 inputs: list[str] = []
                 for p in files:
                     inputs.extend(["-i", str(p)])
@@ -489,8 +643,8 @@ class CombineTab(ttk.Frame):
                     v_lbl = f"v{idx}"
                     a_lbl = f"a{idx}"
                     parts.append(
-                        f"[{idx}:v:0]fps=12,format=yuvj420p,setsar=1,"
-                        + f"setpts=N/12/TB[{v_lbl}]"
+                        f"[{idx}:v:0]fps={fps},format=yuvj420p,setsar=1,"
+                        f"setpts=N/{fps}/TB[{v_lbl}]"
                     )
                     parts.append(
                         f"[{idx}:a:0]aresample=async=1:min_hard_comp=0.100:first_pts=0,"
@@ -518,9 +672,13 @@ class CombineTab(ttk.Frame):
                     "-map",
                     "[a]",
                     "-r",
-                    "12",
+                    str(fps),
+                    "-vsync",
+                    "cfr",
                     "-c:v",
                     "mjpeg",
+                    "-vtag",
+                    "MJPG",
                     "-q:v",
                     "16",
                     "-c:a",
@@ -532,12 +690,14 @@ class CombineTab(ttk.Frame):
                     str(out_path),
                 ]
 
-                self.write_log(f"[*] Joining {len(files)} AVI files -> {out_path.name}")
+                self.write_log(
+                    f"[*] Joining {len(files)} AVI files @ {fps} fps -> {out_path.name}"
+                )
                 code = self.spawn_ffmpeg(cmd)
                 if code == 0:
-                    self.write_log("[OK] Combine complete.")
+                    self.write_log("[OK] Combine complete.]")
                 else:
-                    self.write_log("[ERROR] Combine failed.")
+                    self.write_log("[ERROR] Combine failed.]")
             except Exception as e:
                 self.write_log(f"[ERROR] {e}")
 
