@@ -20,7 +20,7 @@ FRAME_WIDTH, FRAME_HEIGHT = 210, 135
 TARGET_FPS = 12
 VIDEO_CODEC = "mjpeg"
 AUDIO_CODEC = "pcm_u8"
-AUDIO_RATE = "8000"
+AUDIO_RATE = "10000"
 AUDIO_CHANNELS = "1"
 
 VIDEO_EXTENSIONS = (
@@ -136,6 +136,7 @@ class Probe:
 
     def stream_info(self, src: Path) -> dict:
         info = {
+            # video fields
             "r_frame_rate": None,
             "avg_frame_rate": None,
             "nb_frames": None,
@@ -172,6 +173,39 @@ class Probe:
                     info[k] = v
                 if k == "duration" and not info["duration"]:
                     info["duration"] = v
+            return info
+        except Exception:
+            return info
+
+    def audio_info(self, src: Path) -> dict:
+        info = {"codec_name": None, "sample_rate": None, "channels": None}
+        try:
+            cmd = [
+                self.ffprobe,
+                "-v",
+                "error",
+                "-select_streams",
+                "a:0",
+                "-show_streams",
+                "-of",
+                "default=noprint_wrappers=1",
+                str(src),
+            ]
+            out = subprocess.run(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                universal_newlines=True,
+                **_no_console_kwargs(),
+            ).stdout
+            for line in out.splitlines():
+                if "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip()
+                if k in info:
+                    info[k] = v
             return info
         except Exception:
             return info
@@ -218,7 +252,7 @@ class FFmpegProcess:
                 "-vf",
                 vf,
                 "-pix_fmt",
-                "yuvj420p",
+                "yuv420p",
             ]
             if jpeg_preferred:
                 cmd += ["-q:v", str(q)]
@@ -237,47 +271,37 @@ class FFmpegProcess:
             fd, tmp = tempfile.mkstemp(prefix="tinytv_cal_", suffix=".avi")
             os.close(fd)
             cmd = [
-                self.ffmpeg,  # Path to the ffmpeg executable
-                # Suppresses startup banner/info from ffmpeg for cleaner logs
+                self.ffmpeg,
                 "-hide_banner",
                 "-loglevel",
-                "error",  # Only show error messages (no warnings or info)
-                "-y",  # Automatically overwrite output files without asking
+                "error",
+                "-y",
                 "-ss",
-                "0",  # Start time offset, 0 means start from the beginning
+                "0",
                 "-t",
-                f"{sample_secs}",  # Duration, only process this many seconds of video
+                f"{sample_secs}",
                 "-fflags",
-                # Force ffmpeg to generate presentation timestamps, avoids sync issues
                 "+genpts",
-                # Reset time base when copying streams, keep timestamps consistent
                 "-copytb",
                 "0",
                 "-i",
-                str(src),  # Input file (path to source video)
-                # `vf` → user-supplied filter string (like scaling, cropping, etc.)
+                str(src),
                 "-vf",
-                # `fps={fps}` → enforce a fixed frames-per-second output
                 f"{vf},fps={int(fps)}",
                 "-r",
-                # Explicitly set output frame rate, ensures fps is locked
                 str(fps),
                 "-vsync",
-                "cfr",  # Constant frame rate output (duplicate/drop frames as needed)
+                "cfr",
                 "-pix_fmt",
-                # Pixel format: YUV 4:2:0 JPEG variant (TinyTV 2 Expects this)
-                "yuvj420p",
+                "yuv420p",
                 "-c:v",
-                # Video codec, `mjpeg` for TinyTV AVI support
                 vcodec,
                 "-vtag",
-                # Force AVI FourCC tag to "MJPG" to ensure device compatibility
                 "MJPG",
                 "-q:v",
-                # Video quality level (1 = best, 31 = worst).
                 str(int(q)),
                 "-an",
-                tmp,  # Output file path
+                tmp,
             ]
             res = subprocess.run(cmd, **_no_console_kwargs())
             if res.returncode == 0 and os.path.exists(tmp):
@@ -364,7 +388,7 @@ class SizeEstimator:
         try:
             rate = int(self.a_rate)
         except Exception:
-            rate = 8000
+            rate = 10000
         try:
             ch = int(self.a_ch)
         except Exception:
@@ -1075,7 +1099,7 @@ class ConvertTab(ttk.Frame):
             "-vsync",
             "cfr",
             "-pix_fmt",
-            "yuvj420p",
+            "yuv420p",
             "-c:v",
             self.vcodec,
             "-vtag",
@@ -1100,9 +1124,11 @@ class ConvertTab(ttk.Frame):
         """
         Returns True if the file is valid (or fixed successfully), False if failed.
         Validation rules:
-          - r_frame_rate == "{fps}/1"
-          - avg_frame_rate == "{fps}/1"
-          - if nb_frames and duration are present, |nb_frames/fps - duration| < 0.25s
+          - Video r_frame_rate == "{fps}/1"
+          - Video avg_frame_rate == "{fps}/1"
+          - Video FourCC MJPG (codec_tag_string)
+          - If nb_frames and duration are present: |nb_frames/fps - duration| < 0.25s
+          - Audio: codec_name == pcm_u8, sample_rate == 10000, channels == 1
         If validation fails, re-encode once with extra flags to regenerate timestamps.
         """
         fps_str = f"{int(self.fps)}/1"
@@ -1125,13 +1151,33 @@ class ConvertTab(ttk.Frame):
         except Exception:
             ok_duration = True
 
-        if ok_rates and ok_duration and ok_tag:
-            self.log_q.put(f"[ok] Validated {dst.name} (r={r}, avg={a}, tag={tag})")
+        ainfo = self.probe.audio_info(dst)
+        a_codec = (ainfo.get("codec_name") or "").lower()
+        try:
+            a_sr = int(ainfo.get("sample_rate") or 0)
+        except Exception:
+            a_sr = 0
+        try:
+            a_ch = int(ainfo.get("channels") or 0)
+        except Exception:
+            a_ch = 0
+        ok_audio = (
+            (a_codec == "pcm_u8")
+            and (a_sr == int(self.arate))
+            and (a_ch == int(self.ach))
+        )
+
+        if ok_rates and ok_duration and ok_tag and ok_audio:
+            self.log_q.put(
+                f"[ok] Validated {dst.name} (v r={r}, avg={a}, tag={tag}; "
+                + f"a {a_codec} {a_sr}Hz ch{a_ch})"
+            )
             return True
 
         self.log_q.put(
-            f"[warn] Validation failed for {dst.name} (r={r}, avg={a}, tag={tag});"
-            + " re-encoding with PTS fix..."
+            f"[warn] Validation failed for {dst.name} "
+            f"(v r={r}, avg={a}, tag={tag}; a {a_codec} {a_sr}Hz ch{a_ch}); "
+            + "re-encoding with PTS fix..."
         )
         tmp_fixed = dst.with_suffix(".tmp_fix.avi")
         cmd_fix = self._build_base_cmd(src, tmp_fixed, vf_fps, q_val, fix_pass=True)
@@ -1175,15 +1221,32 @@ class ConvertTab(ttk.Frame):
         except Exception:
             ok_duration2 = True
 
-        if ok_rates2 and ok_tag2 and ok_duration2:
+        ainfo2 = self.probe.audio_info(dst)
+        a_codec2 = (ainfo2.get("codec_name") or "").lower()
+        try:
+            a_sr2 = int(ainfo2.get("sample_rate") or 0)
+        except Exception:
+            a_sr2 = 0
+        try:
+            a_ch2 = int(ainfo2.get("channels") or 0)
+        except Exception:
+            a_ch2 = 0
+        ok_audio2 = (
+            (a_codec2 == "pcm_u8")
+            and (a_sr2 == int(self.arate))
+            and (a_ch2 == int(self.ach))
+        )
+
+        if ok_rates2 and ok_tag2 and ok_duration2 and ok_audio2:
             self.log_q.put(
-                f"[ok] Fixed & validated {dst.name} (r={r2}, avg={a2}, tag={tag2})"
+                f"[ok] Fixed & validated {dst.name} (v r={r2}, avg={a2}, tag={tag2}; "
+                + f"a {a_codec2} {a_sr2}Hz ch{a_ch2})"
             )
             return True
 
         self.log_q.put(
-            f"[warn] File still looks odd after fix (r={r2}, avg={a2}, tag={tag2}). "
-            + "Proceeding anyway."
+            f"[warn] File still looks odd after fix (v r={r2}, avg={a2}, tag={tag2}; "
+            f"a {a_codec2} {a_sr2}Hz ch{a_ch2}). Proceeding anyway."
         )
         return True
 

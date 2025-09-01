@@ -10,7 +10,7 @@ from lib.convert_tab import ConvertTab
 from lib.combine_tab import CombineTab
 
 APP_TITLE = "TinyTV® 2 Batch Conversion Tool"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.1.1"
 
 
 def _app_base_dir() -> Path:

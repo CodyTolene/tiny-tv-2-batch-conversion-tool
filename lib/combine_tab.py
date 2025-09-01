@@ -91,7 +91,7 @@ class CombineTab(ttk.Frame):
 
     def _probe_fps(self, path: Path) -> float | None:
         try:
-            # First try avg_frame_rate
+            # Try avg_frame_rate, then r_frame_rate
             cmd = [
                 self.ffprobe,
                 "-v",
@@ -276,7 +276,6 @@ class CombineTab(ttk.Frame):
             fps = 12
             self.fps_var.set("12")
         self.write_log(f"[*] Target FPS set to {fps}")
-        # Recompute estimate using per-file source fps
         self._update_estimate()
 
     def _attach_placeholder(self, entry: tk.Entry, placeholder: str):
@@ -341,8 +340,7 @@ class CombineTab(ttk.Frame):
                 src_size = p.stat().st_size
             except Exception:
                 continue
-            src_fps = self._get_cached_fps(p)  # Get fps
-            # Avoid divide-by-zero, on fail returns 12.0
+            src_fps = self._get_cached_fps(p)
             ratio = max(0.1, float(target_fps) / max(0.1, src_fps))
             total += int(src_size * ratio)
 
@@ -406,7 +404,6 @@ class CombineTab(ttk.Frame):
         if not sel:
             return
 
-        # Reorder based on move direction
         iterate = sel if delta < 0 else list(reversed(sel))
         for i in iterate:
             j = i + delta
@@ -415,7 +412,6 @@ class CombineTab(ttk.Frame):
 
         new_indices = [min(max(0, i + delta), len(self.files) - 1) for i in sel]
 
-        # Refresh and reselect
         self.refresh_list()
         self.listbox.selection_clear(0, tk.END)
         for idx in new_indices:
@@ -476,7 +472,7 @@ class CombineTab(ttk.Frame):
 
             self.write_log(
                 f"[*] Using concat list ({len(files)} files) with re-encode "
-                f"for sync @ {fps} fps"
+                + f"for sync @ {fps} fps"
             )
             cmd = [
                 self.ffmpeg,
@@ -493,13 +489,17 @@ class CombineTab(ttk.Frame):
                 str(path),
                 "-fflags",
                 "+genpts",
+                "-copytb",
+                "0",
                 # Video timing + format
                 "-vf",
-                f"fps={fps},format=yuvj420p,setsar=1,setpts=N/{fps}/TB",
+                f"fps={fps},format=yuv420p,setsar=1,setpts=N/{fps}/TB",
                 "-r",
                 str(fps),
                 "-vsync",
                 "cfr",
+                "-pix_fmt",
+                "yuv420p",
                 "-c:v",
                 "mjpeg",
                 "-vtag",
@@ -514,7 +514,7 @@ class CombineTab(ttk.Frame):
                 "-c:a",
                 "pcm_u8",
                 "-ar",
-                "8000",
+                "10000",
                 "-ac",
                 "1",
                 str(out_path),
@@ -559,7 +559,7 @@ class CombineTab(ttk.Frame):
         raw_name = self._read_entry(self.name_entry) or "combined_episodes"
         name = raw_name.strip()
         if name.lower().endswith(".avi"):
-            name = name[:-4]  # remove extension the user added
+            name = name[:-4]
         if not name:
             name = "combined_episodes"
 
@@ -589,11 +589,13 @@ class CombineTab(ttk.Frame):
                         "-i",
                         str(src),
                         "-vf",
-                        f"fps={fps},format=yuvj420p,setsar=1,setpts=N/{fps}/TB",
+                        f"fps={fps},format=yuv420p,setsar=1,setpts=N/{fps}/TB",
                         "-r",
                         str(fps),
                         "-vsync",
                         "cfr",
+                        "-pix_fmt",
+                        "yuv420p",
                         "-c:v",
                         "mjpeg",
                         "-vtag",
@@ -603,7 +605,7 @@ class CombineTab(ttk.Frame):
                         "-c:a",
                         "pcm_u8",
                         "-ar",
-                        "8000",
+                        "10000",
                         "-ac",
                         "1",
                         "-af",
@@ -623,7 +625,7 @@ class CombineTab(ttk.Frame):
                 if len(files) >= CONCAT_LIST_THRESHOLD:
                     self.write_log(
                         f"[*] Joining {len(files)} AVI files with concat demuxer "
-                        f"(re-encode) @ {fps} fps -> {out_path.name}"
+                        + f"(re-encode) @ {fps} fps -> {out_path.name}"
                     )
                     code = self._run_concat_demuxer_reencode(files, out_path)
                     if code == 0:
@@ -643,7 +645,7 @@ class CombineTab(ttk.Frame):
                     v_lbl = f"v{idx}"
                     a_lbl = f"a{idx}"
                     parts.append(
-                        f"[{idx}:v:0]fps={fps},format=yuvj420p,setsar=1,"
+                        f"[{idx}:v:0]fps={fps},format=yuv420p,setsar=1,"
                         f"setpts=N/{fps}/TB[{v_lbl}]"
                     )
                     parts.append(
@@ -675,6 +677,8 @@ class CombineTab(ttk.Frame):
                     str(fps),
                     "-vsync",
                     "cfr",
+                    "-pix_fmt",
+                    "yuv420p",
                     "-c:v",
                     "mjpeg",
                     "-vtag",
@@ -684,7 +688,7 @@ class CombineTab(ttk.Frame):
                     "-c:a",
                     "pcm_u8",
                     "-ar",
-                    "8000",
+                    "10000",
                     "-ac",
                     "1",
                     str(out_path),
@@ -695,9 +699,9 @@ class CombineTab(ttk.Frame):
                 )
                 code = self.spawn_ffmpeg(cmd)
                 if code == 0:
-                    self.write_log("[OK] Combine complete.]")
+                    self.write_log("[OK] Combine complete.")
                 else:
-                    self.write_log("[ERROR] Combine failed.]")
+                    self.write_log("[ERROR] Combine failed.")
             except Exception as e:
                 self.write_log(f"[ERROR] {e}")
 
