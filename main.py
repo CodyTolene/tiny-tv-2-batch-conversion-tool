@@ -6,11 +6,11 @@ from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
 
-from lib.convert_tab import ConvertTab
-from lib.combine_tab import CombineTab
+from lib.convert.ui_convert_tab import ConvertTab
+from lib.combine.combine_tab import CombineTab
 
 APP_TITLE = "TinyTV® 2 Batch Conversion Tool"
-APP_VERSION = "1.1.1"
+APP_VERSION = "1.2.0"
 
 
 def _app_base_dir() -> Path:
@@ -172,7 +172,7 @@ class TinyTVApp(tk.Tk):
     def _wire_tabs(self):
         self.convert_tab = ConvertTab(
             self.nb,
-            log_q=self.log_q,
+            log_fn=self.log_q.put,
             progress=self.progress,
             convert_btn=self.convert_btn,
             ffmpeg_cmd=FFMPEG_CMD,
