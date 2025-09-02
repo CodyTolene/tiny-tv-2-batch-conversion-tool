@@ -11,7 +11,7 @@ class SizeEstimator:
         frame_h: int,
         a_rate: str,
         a_ch: str,
-        vcodec: str,
+        v_codec: str,
     ):
         self.ff = ff
         self.fps = fps
@@ -19,7 +19,7 @@ class SizeEstimator:
         self.frame_h = frame_h
         self.a_rate = a_rate
         self.a_ch = a_ch
-        self.vcodec = vcodec
+        self.v_codec = v_codec
         self.anchor_cache: dict[tuple[str, str, int], tuple[float, float]] = {}
         self.anchor_inflight: set[tuple[str, str, int]] = set()
 
@@ -39,7 +39,7 @@ class SizeEstimator:
                     q=2,
                     fps=self.fps,
                     sample_secs=sample_secs,
-                    vcodec=self.vcodec,
+                    v_codec=self.v_codec,
                 )
                 worst = self.ff.calibrate_video_bps(
                     src,
@@ -47,7 +47,7 @@ class SizeEstimator:
                     q=31,
                     fps=self.fps,
                     sample_secs=sample_secs,
-                    vcodec=self.vcodec,
+                    v_codec=self.v_codec,
                 )
                 if best and worst:
                     self.anchor_cache[key] = (best * 1.05, worst * 1.05)

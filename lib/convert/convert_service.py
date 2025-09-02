@@ -18,10 +18,10 @@ class ConvertService:
         out_w: int,
         out_h: int,
         fps: int,
-        vcodec: str,   # kept for ctor compatibility, not used
-        acodec: str,   # kept for ctor compatibility, not used
-        arate: str,    # kept for ctor compatibility, not used
-        ach: str,      # kept for ctor compatibility, not used
+        v_codec: str,
+        a_codec: str,
+        a_rate: str,
+        a_ch: str,
         on_log: LogFn,
         on_progress: ProgressFn,
         on_running_changed: RunningFn | None = None,
@@ -33,20 +33,21 @@ class ConvertService:
             fps=fps,
             frame_w=out_w,
             frame_h=out_h,
-            a_rate="10000",
-            a_ch="1",
-            vcodec="mjpeg",
+            a_rate=a_rate,
+            a_ch=a_ch,
+            v_codec=v_codec,
         )
 
         self.out_w = out_w
         self.out_h = out_h
         self.fps = fps
+        self.a_codec = a_codec
+        self.v_codec = v_codec
 
         self.on_log = on_log
         self.on_progress = on_progress
         self.on_running_changed = on_running_changed or (lambda _b: None)
 
-    # Preview helpers (left as-is in case your UI uses them)
     def thumbnail(self, src: Path, vf: str, q: int, jpeg_preferred: bool) -> str | None:
         return self.ff.thumbnail(src, vf, q, jpeg_preferred)
 
@@ -68,35 +69,27 @@ class ConvertService:
             f"crop={self.out_w}:{self.out_h}:exact=1,hqdn3d"
         )
 
-    def build_cmd(self, src: Path, dst: Path, q_val: int) -> list[str]:
+    def build_cmd(
+        self, 
+        src: Path, 
+        dst: Path, 
+        q_val: int,
+        scale_mode: str,        # TODO: USE
+        normalize_audio: bool,  # TODO: USE
+    ) -> list[str]:
         vf = (
             f"scale={self.out_w}:{self.out_h}:force_original_aspect_ratio=increase,"
             f"crop={self.out_w}:{self.out_h}:exact=1,hqdn3d"
         )
-        # default = [
-        #     self.ff.ffmpeg,
-        #     "-i", str(src),
-        #     "-r", "24",
-        #     "-pix_fmt", "yuv420p",
-        #     "-vf", vf,
-        #     "-b:v", "1500k",
-        #     "-maxrate", "1500k",
-        #     "-bufsize", "64k",
-        #     "-c:v", "mjpeg",
-        #     "-acodec", "pcm_u8",
-        #     "-ar", "10000",
-        #     "-ac", "1",
-        #     str(dst),
-        # ]
         return [
             self.ff.ffmpeg,
             "-i", str(src),
             "-r", str(int(self.fps)),
             "-pix_fmt", "yuv420p",
             "-vf", vf,
-            "-c:v", "mjpeg",
+            "-c:v", str(self.v_codec),
             "-q:v", str(int(q_val)),
-            "-acodec", "pcm_u8",
+            "-acodec", str(self.a_codec),
             "-ar", "10000",
             "-ac", "1",
             str(dst),
@@ -108,8 +101,8 @@ class ConvertService:
         *,
         output_dir: Path,
         q_val: int,
-        scale_mode: str,       # unused now
-        normalize_audio: bool, # unused now
+        scale_mode: str,
+        normalize_audio: bool,
         channel_prefix: str | None,
     ):
         files = list(files)
@@ -129,7 +122,13 @@ class ConvertService:
                 dst = output_dir / f"{prefix}{base}.avi"
 
                 self.on_log(f"[*] Converting {src.name} -> {dst.name}")
-                cmd = self.build_cmd(src, dst, q_val)
+                cmd = self.build_cmd(
+                    src, 
+                    dst, 
+                    q_val,
+                    scale_mode,
+                    normalize_audio
+                )
                 code = self.ff.run(cmd)
                 self.on_progress(idx, total)
 

@@ -3,11 +3,15 @@ import tkinter as tk
 from tkinter import ttk, filedialog
 from pathlib import Path
 from lib.config import (
-    FRAME_WIDTH,
+    AUDIO_CHANNEL,
+    AUDIO_CODEC,
+    AUDIO_RATE,
+    FPS_CHOICES,
     FRAME_HEIGHT,
+    FRAME_WIDTH,
+    VIDEO_CODEC,
     VIDEO_EXTENSIONS,
     VIDEO_FILETYPES,
-    FPS_CHOICES,
 )
 from lib.convert.utils import fmt_bytes, fmt_hms, pad2, is_video, PathTools
 from lib.convert.convert_service import ConvertService
@@ -36,10 +40,10 @@ class ConvertTab(ttk.Frame):
         out_w: int = FRAME_WIDTH,
         out_h: int = FRAME_HEIGHT,
         fps: int = FPS_CHOICES[0],
-        v_codec: str = "mjpeg",
-        a_codec: str = "pcm_u8",
-        a_rate: str = "10000",
-        a_ch: str = "1",
+        v_codec: str = VIDEO_CODEC,
+        a_codec: str = AUDIO_CODEC,
+        a_rate: str = AUDIO_RATE,
+        a_ch: str = AUDIO_CHANNEL,
     ):
         super().__init__(master)
         self.log = log_fn
@@ -62,26 +66,23 @@ class ConvertTab(ttk.Frame):
             out_w=out_w,
             out_h=out_h,
             fps=fps,
-            vcodec=v_codec,
-            acodec=a_codec,
-            arate=a_rate,
-            ach=a_ch,
+            v_codec=v_codec,
+            a_codec=a_codec,
+            a_rate=a_rate,
+            a_ch=a_ch,
             on_log=self.log,
             on_progress=self._on_progress_tick,
             on_running_changed=self._on_running_changed,
         )
 
-        # build UI (same layout you had)
+        # Build UI
         self._build_ui(fps_initial=fps)
         self.update_controls()
         self._clear_preview()
         self.after(0, self._set_initial_minsize)
 
-    # UI building, event handlers, and preview logic stay here
-    # Reuse your existing widget setup code, but call into self.service for logic
-
     def _build_ui(self, fps_initial: int):
-        # preview
+        # Preview area
         self.preview_panel = ttk.Frame(self)
         self.preview_panel.grid(
             row=0, column=0, rowspan=6, sticky="nw", padx=(10, 10), pady=10
@@ -102,7 +103,7 @@ class ConvertTab(ttk.Frame):
         self.size_label = ttk.Label(self.preview_panel, text="Estimated size: N/A")
         self.size_label.pack(side="top", anchor="w")
 
-        # file list + buttons (reuse your code)
+        # File list
         list_wrap = ttk.Frame(self)
         list_wrap.grid(
             row=0,
@@ -126,6 +127,7 @@ class ConvertTab(ttk.Frame):
         self.empty_hint = ttk.Label(self, text="No files selected.", foreground="#666")
         self._toggle_empty_hint()
 
+        # File list buttons
         btns = ttk.Frame(self)
         btns.grid(row=0, column=3, rowspan=6, sticky="ne", padx=10, pady=10)
         ttk.Button(btns, text="Add files", command=lambda: self.add_files()).pack(
@@ -148,7 +150,7 @@ class ConvertTab(ttk.Frame):
         )
         self.btn_clear.pack(pady=2, fill="x")
 
-        # output row
+        # Output directory row
         self.output_dir_var = tk.StringVar()
         self.output_dir_var.trace_add("write", lambda *_: self.update_controls())
         out_row = ttk.Frame(self)
@@ -159,7 +161,7 @@ class ConvertTab(ttk.Frame):
         self.output_entry = ttk.Entry(out_row, textvariable=self.output_dir_var)
         self.output_entry.pack(side="left", padx=(8, 0), fill="x", expand=True)
 
-        # options row
+        # Options row
         options_row = ttk.Frame(self)
         options_row.grid(
             row=7, column=0, columnspan=4, sticky="we", padx=10, pady=(0, 4)
@@ -167,7 +169,7 @@ class ConvertTab(ttk.Frame):
         for col in range(4):
             options_row.grid_columnconfigure(col, weight=1)
 
-        # channel
+        # Channel prefix
         chan_group = ttk.Frame(options_row)
         chan_group.grid(row=0, column=0, sticky="w")
         ttk.Label(chan_group, text="Channel prefix (optional)").pack(side="left")
@@ -178,7 +180,7 @@ class ConvertTab(ttk.Frame):
         self.channel_entry.pack(side="left", padx=(8, 0))
         self._attach_placeholder(self.channel_entry, "e.g. 01")
 
-        # scaling
+        # Scaling options
         scale_group = ttk.Frame(options_row)
         scale_group.grid(row=0, column=1, sticky="we")
         ttk.Label(scale_group, text="Scaling:").pack(side="left", padx=(0, 8))
@@ -196,7 +198,7 @@ class ConvertTab(ttk.Frame):
                 command=lambda: self._schedule_preview_update(),
             ).pack(side="left", padx=(0, 8))
 
-        # normalize
+        # Audio normalization
         norm_group = ttk.Frame(options_row)
         norm_group.grid(row=0, column=2, sticky="e")
         self.normalize_audio_var = tk.BooleanVar(value=False)
@@ -206,7 +208,7 @@ class ConvertTab(ttk.Frame):
             variable=self.normalize_audio_var,
         ).pack(side="right")
 
-        # fps
+        # FPS Dropdown 12/24
         fps_group = ttk.Frame(options_row)
         fps_group.grid(row=0, column=3, sticky="e", padx=(8, 0))
         ttk.Label(fps_group, text="FPS:").pack(side="left")
@@ -221,7 +223,7 @@ class ConvertTab(ttk.Frame):
         self.fps_box.pack(side="left", padx=(6, 0))
         self.fps_box.bind("<<ComboboxSelected>>", self._on_fps_change)
 
-        # quality
+        # Quality Slider
         q_row = ttk.Frame(self)
         q_row.grid(row=8, column=0, columnspan=4, sticky="we", padx=10, pady=(0, 8))
         ttk.Label(q_row, text="Quality:").pack(side="left", padx=(0, 8))
@@ -238,7 +240,7 @@ class ConvertTab(ttk.Frame):
         self.quality_scale.pack(side="left", padx=8, fill="x", expand=True)
         ttk.Label(q_row, text="Larger file / higher quality").pack(side="left")
 
-        # layout stretch
+        # Layout
         self.grid_columnconfigure(0, weight=0)
         self.grid_columnconfigure(1, weight=3)
         self.grid_columnconfigure(2, weight=2)
@@ -247,7 +249,7 @@ class ConvertTab(ttk.Frame):
             self.grid_rowconfigure(r, weight=0)
         self.grid_rowconfigure(5, weight=1)
 
-        # convert button handler
+        # Convert button
         self.convert_btn.config(text="Convert", command=self.start_convert_all)
 
     def _on_progress_tick(self, current: int, total: int):
