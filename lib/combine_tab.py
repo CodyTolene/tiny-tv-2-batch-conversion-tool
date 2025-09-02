@@ -352,13 +352,14 @@ class CombineTab(ttk.Frame):
         except Exception:
             pass
 
-        if self._combine_btn is not None:
-            try:
-                self._combine_btn.config(
-                    state=("disabled" if over or not self.files else "normal")
-                )
-            except Exception:
-                pass
+        # Disable "Combine" button if over FAT32 limit
+        # if self._combine_btn is not None:
+        #     try:
+        #         self._combine_btn.config(
+        #             state=("disabled" if over or not self.files else "normal")
+        #         )
+        #     except Exception:
+        #         pass
 
         self._estimate_over_limit = over
 
@@ -533,12 +534,12 @@ class CombineTab(ttk.Frame):
             return
 
         # Block if over FAT32 limit
-        if self._estimate_over_limit:
-            self.write_log(
-                "[ERROR] Estimated output exceeds FAT32 single-file limit (~4GB). "
-                + "Remove files or split the batch."
-            )
-            return
+        # if self._estimate_over_limit:
+        #     self.write_log(
+        #         "[ERROR] Estimated output exceeds FAT32 single-file limit (~4GB). "
+        #         + "Remove files or split the batch."
+        #     )
+        #     return
 
         out_dir = self.out_var.get().strip() or str(Path.cwd())
         Path(out_dir).mkdir(parents=True, exist_ok=True)
