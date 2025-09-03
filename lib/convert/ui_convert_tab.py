@@ -9,6 +9,7 @@ from lib.config import (
     FPS_CHOICES,
     FRAME_HEIGHT,
     FRAME_WIDTH,
+    PIXEL_FORMAT,
     VIDEO_CODEC,
     VIDEO_EXTENSIONS,
     VIDEO_FILETYPES,
@@ -44,6 +45,7 @@ class ConvertTab(ttk.Frame):
         a_codec: str = AUDIO_CODEC,
         a_rate: str = AUDIO_RATE,
         a_ch: str = AUDIO_CHANNEL,
+        p_format: str = PIXEL_FORMAT,
     ):
         super().__init__(master)
         self.log = log_fn
@@ -70,6 +72,7 @@ class ConvertTab(ttk.Frame):
             a_codec=a_codec,
             a_rate=a_rate,
             a_ch=a_ch,
+            p_format=p_format,
             on_log=self.log,
             on_progress=self._on_progress_tick,
             on_running_changed=self._on_running_changed,

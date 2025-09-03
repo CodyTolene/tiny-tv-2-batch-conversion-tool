@@ -6,6 +6,7 @@ VIDEO_CODEC = "mjpeg"
 AUDIO_CODEC = "pcm_u8"
 AUDIO_RATE = "10000"
 AUDIO_CHANNEL = "1"
+PIXEL_FORMAT = "yuv420p"
 
 VIDEO_EXTENSIONS = (
     ".mp4",

@@ -60,42 +60,61 @@ class FFmpegProcess:
         return None
 
     def calibrate_video_bps(
-        self, src: Path, vf: str, q: int, fps: int, sample_secs: float, vcodec: str
+        self,
+        src: Path,
+        vf: str,
+        q_val: int,
+        fps: int,
+        sample_secs: float,
+        a_codec: str,  # Unused
+        a_rate: str,  # Unused
+        a_ch: str,  # Unused
+        p_format: str,
+        v_codec: str,
     ) -> float | None:
         try:
             fd, tmp = tempfile.mkstemp(prefix="tinytv_cal_", suffix=".avi")
             os.close(fd)
+
+            # Command tuples
+            logLevel = ["-hide_banner", "-loglevel", "error", "-stats"]
+            overwriteIfExists = ["-y"]
+            inputSource = ["-i", str(src)]
+            videoFilters = ["-vf", vf]
+            outputRate = ["-r", str(int(fps))]
+            pixelFormat = ["-pix_fmt", p_format]
+            videoCodec = ["-c:v", v_codec]
+            videoQuality = ["-q:v", str(int(q_val))]
+
+            # Unused
+            # constantFrameRate = ["-vsync", "cfr"]
+            # videoCodecTag = ["-vtag", "MJPG"]
+            # audioCodec = ["-acodec", str(a_codec)]
+            # audioRate = ["-ar", str(a_rate)]
+            # audioChannels = ["-ac", str(a_ch)]
+
+            # Specific for check
+            startingFrame = ["-ss", "0"]
+            duration = ["-t", f"{sample_secs}"]
+            generatePresentationTimestamps = ["-fflags", "+genpts"]
+            copyTimeBase = ["-copytb", "0"]
+            disableAudio = ["-an"]
+
             cmd = [
                 self.ffmpeg,
-                "-hide_banner",
-                "-loglevel",
-                "error",
-                "-y",
-                "-ss",
-                "0",
-                "-t",
-                f"{sample_secs}",
-                "-fflags",
-                "+genpts",
-                "-copytb",
-                "0",
-                "-i",
-                str(src),
-                "-vf",
-                f"{vf},fps={int(fps)}",
-                "-r",
-                str(fps),
-                "-vsync",
-                "cfr",
-                "-pix_fmt",
-                "yuv420p",
-                "-c:v",
-                vcodec,
-                "-vtag",
-                "MJPG",
-                "-q:v",
-                str(int(q)),
-                "-an",
+                *logLevel,
+                *overwriteIfExists,
+                *startingFrame,
+                *duration,
+                *generatePresentationTimestamps,
+                *copyTimeBase,
+                *inputSource,
+                *videoFilters,
+                *outputRate,
+                *pixelFormat,
+                *videoCodec,
+                *videoQuality,
+                *disableAudio,
                 tmp,
             ]
             res = subprocess.run(cmd, **_no_console_kwargs())

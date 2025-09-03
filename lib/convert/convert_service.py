@@ -22,6 +22,7 @@ class ConvertService:
         a_codec: str,
         a_rate: str,
         a_ch: str,
+        p_format: str,
         on_log: LogFn,
         on_progress: ProgressFn,
         on_running_changed: RunningFn | None = None,
@@ -33,8 +34,10 @@ class ConvertService:
             fps=fps,
             frame_w=out_w,
             frame_h=out_h,
+            a_codec=a_codec,
             a_rate=a_rate,
             a_ch=a_ch,
+            p_format=p_format,
             v_codec=v_codec,
         )
 
@@ -42,6 +45,9 @@ class ConvertService:
         self.out_h = out_h
         self.fps = fps
         self.a_codec = a_codec
+        self.a_rate = a_rate
+        self.a_ch = a_ch
+        self.p_format = p_format
         self.v_codec = v_codec
 
         self.on_log = on_log
@@ -59,41 +65,70 @@ class ConvertService:
     ) -> int | None:
         return self.sizer.estimate_bytes(duration, q, vf=vf, src=src)
 
-    def build_vf(self, _scale_mode: str) -> str:
-        """
-        Minimal shim for the UI preview/estimator.
-        Ignores scale_mode and returns the fixed chain that matches build_cmd.
-        """
-        return (
-            f"scale={self.out_w}:{self.out_h}:force_original_aspect_ratio=increase,"
-            f"crop={self.out_w}:{self.out_h}:exact=1,hqdn3d"
-        )
+    def build_vf(self, scale_mode: str) -> str:
+        w = self.out_w
+        h = self.out_h
+        # Scale
+        if scale_mode == "contain":
+            s = f"min({w}/iw\\,{h}/ih)"
+            we = f"trunc(iw*{s}/2)*2"
+            he = f"trunc(ih*{s}/2)*2"
+            return f"scale={we}:{he},setsar=1,pad={w}:{h}:(ow-iw)/2:(oh-ih)/2"
+        # Cover
+        if scale_mode == "cover":
+            s = f"max({w}/iw\\,{h}/ih)"
+            we = f"trunc(iw*{s}/2)*2"
+            he = f"trunc(ih*{s}/2)*2"
+            return f"scale={we}:{he},setsar=1,crop={w}:{h}"
+        # Stretch
+        return f"scale={w}:{h},setsar=1"
 
     def build_cmd(
-        self, 
-        src: Path, 
-        dst: Path, 
+        self,
+        src: Path,
+        dst: Path,
         q_val: int,
-        scale_mode: str,        # TODO: USE
-        normalize_audio: bool,  # TODO: USE
+        scale_mode: str,
+        normalize_audio: bool,
     ) -> list[str]:
-        vf = (
-            f"scale={self.out_w}:{self.out_h}:force_original_aspect_ratio=increase,"
-            f"crop={self.out_w}:{self.out_h}:exact=1,hqdn3d"
-        )
-        return [
+        vf_str = self.build_vf(scale_mode)
+
+        # Command tuples
+        logLevel = ["-hide_banner", "-loglevel", "error", "-stats"]
+        overwriteIfExists = ["-y"]
+        inputSource = ["-i", str(src)]
+        outputRate = ["-r", str(int(self.fps))]
+        pixelFormat = ["-pix_fmt", self.p_format]
+        videoFilters = ["-vf", vf_str]
+        videoCodec = ["-c:v", self.v_codec]
+        videoQuality = ["-q:v", str(int(q_val))]
+        audioCodec = ["-acodec", str(self.a_codec)]
+        audioRate = ["-ar", str(self.a_rate)]
+        audioChannels = ["-ac", str(self.a_ch)]
+        normalizeAudio = ["-af", "volume=+6dB,alimiter=limit=0.97"]
+        dstArg = [str(dst)]
+
+        cmd = [
             self.ff.ffmpeg,
-            "-i", str(src),
-            "-r", str(int(self.fps)),
-            "-pix_fmt", "yuv420p",
-            "-vf", vf,
-            "-c:v", str(self.v_codec),
-            "-q:v", str(int(q_val)),
-            "-acodec", str(self.a_codec),
-            "-ar", "10000",
-            "-ac", "1",
-            str(dst),
+            *logLevel,
+            *overwriteIfExists,
+            *inputSource,
+            *outputRate,
+            *pixelFormat,
+            *videoFilters,
+            *videoCodec,
+            *videoQuality,
+            *audioCodec,
+            *audioRate,
+            *audioChannels,
         ]
+
+        if normalize_audio:
+            cmd += normalizeAudio
+
+        cmd += dstArg
+
+        return cmd
 
     def convert_files(
         self,
@@ -122,13 +157,7 @@ class ConvertService:
                 dst = output_dir / f"{prefix}{base}.avi"
 
                 self.on_log(f"[*] Converting {src.name} -> {dst.name}")
-                cmd = self.build_cmd(
-                    src, 
-                    dst, 
-                    q_val,
-                    scale_mode,
-                    normalize_audio
-                )
+                cmd = self.build_cmd(src, dst, q_val, scale_mode, normalize_audio)
                 code = self.ff.run(cmd)
                 self.on_progress(idx, total)
 
@@ -146,7 +175,9 @@ class ConvertService:
 
 class _QueueAdapter:
     """Adapts service on_log(str) to the .put interface used by FFmpegProcess."""
+
     def __init__(self, on_log: LogFn):
         self.on_log = on_log
+
     def put(self, msg: str):
         self.on_log(msg)
