@@ -12,6 +12,7 @@ from lib.config import (
     AUDIO_CHANNEL,
     PIXEL_FORMAT,
 )
+from lib.utils import _no_console_kwargs
 
 VIDEO_EXTENSIONS = (".avi",)
 VIDEO_PATTERNS = ";".join(f"*{ext}" for ext in VIDEO_EXTENSIONS)
@@ -45,20 +46,6 @@ def fmt_bytes(n: int) -> str:
         return f"{gb:.2f} GB"
     except Exception:
         return "N/A"
-
-
-def _no_console_kwargs() -> dict:
-    try:
-        import sys
-        import subprocess as _sp
-
-        if sys.platform.startswith("win"):
-            si = _sp.STARTUPINFO()
-            si.dwFlags |= _sp.STARTF_USESHOWWINDOW
-            return {"startupinfo": si, "creationflags": _sp.CREATE_NO_WINDOW}
-    except Exception:
-        pass
-    return {}
 
 
 class CombineTab(ttk.Frame):

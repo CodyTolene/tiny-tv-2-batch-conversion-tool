@@ -171,7 +171,7 @@ class TinyTVApp(tk.Tk):
 
         self.combine_tab = CombineTab(
             self.nb,
-            log_fn=self.log_q,
+            log_fn=self.log_q.put,
             ffmpeg_cmd=FFMPEG_CMD,
             progress=self.progress,
             combine_btn=self.combine_btn,
