@@ -1,5 +1,5 @@
 from pathlib import Path
-from .ffmpeg_proc import FFmpegProcess
+from lib.ffmpeg_proc import FFmpegProcess
 
 
 class SizeEstimator:

@@ -3,7 +3,7 @@ import tempfile
 import subprocess
 import queue
 from pathlib import Path
-from .utils import _no_console_kwargs
+from lib.utils import _no_console_kwargs
 
 
 class FFmpegProcess:

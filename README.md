@@ -222,8 +222,17 @@ This software uses FFmpeg licensed under the [LGPLv2.1][url-license-lgpl] licens
 
 ## Wrapping Up <a name="wrapping-up"></a>
 
-Thank you to Tiny Circuits for the [TinyTV® 2](https://tinycircuits.com/products/tinytv-2), it's a fun device! If you have any
-questions, please let me know by [opening an issue here][url-new-issue].
+Thank you to Tiny Circuits for the [TinyTV® 2](https://tinycircuits.com/products/tinytv-2), it's a fun device!
+
+**Note:** This tool is a rapid prototype built with assistance from an AI pair-programming tool to speed up development. The goals of this project are primarily:
+
+- To create a useful tool for TinyTV® 2 users.
+- To learn how to build quick Windows desktop applications with Python and Tkinter.
+- To be able to create more ffmpeg-based wrapper tools in the future for other devices.
+- To effectively put together linting and formatting tools for Python projects.
+- To learn how to package and build standalone Windows executables with PyInstaller.
+
+If you find this tool useful, please consider supporting my work. Your support helps me continue developing and maintaining this project. If you have any questions, suggestions, or issues, please feel free to reach out or open an issue on the [GitHub repository][url-new-issue].
 
 | Type                                                                      | Info                                                           |
 | :------------------------------------------------------------------------ | :------------------------------------------------------------- |

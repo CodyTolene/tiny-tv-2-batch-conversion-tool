@@ -1,9 +1,9 @@
 import threading
 from pathlib import Path
 from typing import Callable, Iterable
-from .probe import Probe
-from .ffmpeg_proc import FFmpegProcess
-from .size_estimator import SizeEstimator
+from lib.probe import Probe
+from lib.ffmpeg_proc import FFmpegProcess
+from lib.convert.size_estimator import SizeEstimator
 
 LogFn = Callable[[str], None]
 ProgressFn = Callable[[int, int], None]  # current, total
