@@ -5,12 +5,13 @@ import sys
 from pathlib import Path
 import tkinter as tk
 from tkinter import ttk
+from lib.utils import _no_console_kwargs
 
-from lib.convert_tab import ConvertTab
-from lib.combine_tab import CombineTab
+from lib.convert.ui_convert_tab import ConvertTab
+from lib.combine.ui_combine_tab import CombineTab
 
 APP_TITLE = "TinyTV® 2 Batch Conversion Tool"
-APP_VERSION = "1.1.0"
+APP_VERSION = "1.2.0"
 
 
 def _app_base_dir() -> Path:
@@ -23,17 +24,6 @@ def _app_base_dir() -> Path:
 def _bin_candidate(exe_name: str) -> Path:
     # exe_name should include extension on Windows (e.g., "ffmpeg.exe")
     return _app_base_dir() / "bin" / exe_name
-
-
-def _no_console_kwargs() -> dict:
-    try:
-        if sys.platform.startswith("win"):
-            si = subprocess.STARTUPINFO()
-            si.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            return {"startupinfo": si, "creationflags": subprocess.CREATE_NO_WINDOW}
-    except Exception:
-        pass
-    return {}
 
 
 def resolve_tool(preferred_name_with_ext: str, path_name_no_ext: str) -> str:
@@ -172,7 +162,7 @@ class TinyTVApp(tk.Tk):
     def _wire_tabs(self):
         self.convert_tab = ConvertTab(
             self.nb,
-            log_q=self.log_q,
+            log_fn=self.log_q.put,
             progress=self.progress,
             convert_btn=self.convert_btn,
             ffmpeg_cmd=FFMPEG_CMD,
@@ -181,8 +171,10 @@ class TinyTVApp(tk.Tk):
 
         self.combine_tab = CombineTab(
             self.nb,
-            log_q=self.log_q,
+            log_fn=self.log_q.put,
             ffmpeg_cmd=FFMPEG_CMD,
+            progress=self.progress,
+            combine_btn=self.combine_btn,
         )
         self.nb.add(self.combine_tab, text="Combine")
 
